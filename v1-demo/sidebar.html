@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Drive Navigator - DEMO</title>
+  <link rel="stylesheet" href="sidebar.css">
+  <style>
+    body {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    #header {
+      background: rgba(255, 255, 255, 0.95);
+    }
+    #header h3::after {
+      content: " 🎭 DEMO";
+      font-size: 0.7em;
+      color: #764ba2;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <!-- Main Screen (No Auth Required!) -->
+  <div id="main-screen" class="screen">
+    <!-- Header with controls -->
+    <div id="header">
+      <div class="header-top">
+        <h3>My Drive</h3>
+        <button id="sign-out-btn" class="icon-btn" title="Sign Out">🚪</button>
+      </div>
+      <div class="header-controls">
+        <button id="refresh-btn" class="btn" title="Refresh">↻ Refresh</button>
+        <button id="new-file-btn" class="btn primary-btn" title="Create New">+ New</button>
+      </div>
+      <div class="search-container">
+        <input type="text" id="search-input" placeholder="Search files..." />
+        <button id="clear-search-btn" class="icon-btn hidden">✕</button>
+      </div>
+    </div>
+
+    <!-- Recent Files Section (collapsible) -->
+    <div id="recent-section" class="section">
+      <div class="section-header" id="recent-header">
+        <span class="toggle-arrow">▼</span>
+        <span class="section-title">Recent Files</span>
+      </div>
+      <div id="recent-files-container" class="recent-container">
+        <!-- Recent files will be rendered here -->
+      </div>
+    </div>
+
+    <!-- Pinned Folders Section (collapsible) -->
+    <div id="pinned-section" class="section hidden">
+      <div class="section-header" id="pinned-header">
+        <span class="toggle-arrow">▼</span>
+        <span class="section-title">Pinned Folders</span>
+      </div>
+      <div id="pinned-folders-container">
+        <!-- Pinned folders will be rendered here -->
+      </div>
+    </div>
+
+    <!-- Folder Tree -->
+    <div id="tree-section" class="section">
+      <div class="section-header">
+        <span class="section-title">All Folders</span>
+      </div>
+      <div id="tree-container">
+        <!-- Folder tree will be rendered here -->
+        <div id="loading-spinner" class="spinner">Loading...</div>
+      </div>
+    </div>
+
+    <!-- Selection Actions (shown when files are selected) -->
+    <div id="selection-actions" class="hidden">
+      <div class="selection-info">
+        <span id="selection-count">0 items selected</span>
+        <button id="clear-selection-btn" class="text-btn">Clear</button>
+      </div>
+      <div class="action-buttons">
+        <button id="delete-selected-btn" class="btn danger-btn">🗑️ Delete</button>
+        <button id="move-selected-btn" class="btn">📁 Move</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Context Menu -->
+  <div id="context-menu" class="context-menu hidden">
+    <div class="context-item" id="context-open">Open</div>
+    <div class="context-item" id="context-open-new-tab">Open in New Tab</div>
+    <div class="context-separator"></div>
+    <div class="context-item" id="context-rename">Rename</div>
+    <div class="context-item" id="context-move">Move</div>
+    <div class="context-item" id="context-pin">Pin Folder</div>
+    <div class="context-separator"></div>
+    <div class="context-item danger" id="context-delete">Delete</div>
+  </div>
+
+  <!-- Modal Container -->
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div id="modal" class="modal">
+      <div class="modal-header">
+        <h3 id="modal-title">Modal Title</h3>
+        <button id="modal-close-btn" class="icon-btn">✕</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Modal content will be dynamically inserted here -->
+      </div>
+      <div class="modal-footer" id="modal-footer">
+        <button id="modal-cancel-btn" class="btn">Cancel</button>
+        <button id="modal-confirm-btn" class="btn primary-btn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container"></div>
+
+  <script src="demo-data.js"></script>
+  <script src="sidebar.js"></script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Google Drive Navigator V1 - DEMO",
+  "version": "1.0.0-demo",
+  "description": "Demo version with dummy data - No credentials required!",
+  "permissions": [
+    "sidePanel"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidebar.html"
+  },
+  "action": {
+    "default_title": "Open Drive Navigator Demo"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

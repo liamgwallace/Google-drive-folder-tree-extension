@@ -41,6 +41,36 @@ This repository contains **two complete implementations** with different archite
 
 ---
 
+## 🎭 Demo Versions (Try Before Setup!)
+
+**No OAuth, no credentials, no setup required!** Try the demos first to see the UI:
+
+### V1 Demo - Side Panel Preview
+**Location**: [`/v1-demo/`](./v1-demo/)
+
+- ✅ Instant preview of V1 UI
+- ✅ No Google account needed
+- ✅ Uses emoji icons and dummy data
+- ✅ All features interactive (simulated)
+
+**Quick start**: Load `v1-demo` folder → Click extension icon → See it work!
+
+📖 **[V1 Demo README](./v1-demo/README_DEMO.md)**
+
+### V2 Demo - Content Script Preview
+**Location**: [`/v2-demo/`](./v2-demo/)
+
+- ✅ See V2 on ANY webpage
+- ✅ Per-tab toggle in action
+- ✅ Emoji icons, no PNG required
+- ✅ Experience the integrated UI
+
+**Quick start**: Load `v2-demo` folder → Visit any website → See the icon bar!
+
+📖 **[V2 Demo README](./v2-demo/README_DEMO.md)**
+
+---
+
 ## 🤔 Which Version Should I Use?
 
 ### Choose **V1** if you want:
