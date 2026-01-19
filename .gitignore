@@ -1,0 +1,81 @@
+# Chrome Extension Development
+
+# Never commit these - they contain sensitive credentials
+# Copy manifest.json to manifest.local.json and add your credentials there
+manifest.local.json
+config.local.js
+*.pem
+*.crx
+
+# OAuth credentials (if stored separately)
+credentials.json
+client_secret*.json
+
+# Environment files
+.env
+.env.local
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+.directory
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Optional: Generated icons (if you auto-generate them)
+# Uncomment if you're generating PNG icons from SVG
+# icons/icon16.png
+# icons/icon48.png
+# icons/icon128.png
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+
+# Node modules (if you add build tools later)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output (if you add bundling later)
+dist/
+build/
+
+# Test coverage
+coverage/
+
+# Cache
+.cache/
