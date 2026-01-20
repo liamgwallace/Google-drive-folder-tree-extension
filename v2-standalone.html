@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google Drive Navigator V2 - Standalone Preview</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --gdn-primary-color: #4285f4;
+      --gdn-bg-color: #ffffff;
+      --gdn-bg-secondary: #f8f9fa;
+      --gdn-border-color: #dadce0;
+      --gdn-text-primary: #202124;
+      --gdn-text-secondary: #5f6368;
+      --gdn-hover-bg: #f1f3f4;
+      --gdn-shadow: 0 1px 2px rgba(60, 64, 67, 0.3);
+      --gdn-shadow-lg: 0 2px 8px rgba(60, 64, 67, 0.3);
+      --gdn-iconbar-width: 60px;
+      --gdn-sidebar-width: 280px;
+    }
+
+    body {
+      font-family: 'Segoe UI', 'Roboto', Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      overflow-x: hidden;
+      transition: margin-left 0.3s ease;
+    }
+
+    body.sidebar-expanded {
+      margin-left: calc(var(--gdn-iconbar-width) + var(--gdn-sidebar-width));
+    }
+
+    /* Icon Bar */
+    #iconbar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: var(--gdn-iconbar-width);
+      height: 100vh;
+      background-color: var(--gdn-bg-color);
+      border-right: 1px solid var(--gdn-border-color);
+      box-shadow: var(--gdn-shadow);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 0;
+      z-index: 1000;
+    }
+
+    .icon-button {
+      width: 40px;
+      height: 40px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 8px;
+      margin: 4px 0;
+      transition: background-color 0.2s, transform 0.2s;
+      font-size: 24px;
+      position: relative;
+    }
+
+    .icon-button:hover {
+      background-color: var(--gdn-hover-bg);
+      transform: scale(1.05);
+    }
+
+    .icon-button.active {
+      background-color: #e8f0fe;
+      color: var(--gdn-primary-color);
+    }
+
+    .icon-spacer {
+      flex: 1;
+    }
+
+    .toggle-button {
+      margin-top: auto;
+      border-top: 1px solid var(--gdn-border-color);
+      padding-top: 12px;
+    }
+
+    /* Tooltip */
+    .tooltip {
+      position: absolute;
+      left: calc(100% + 8px);
+      background-color: var(--gdn-text-primary);
+      color: white;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+      z-index: 10000;
+    }
+
+    .icon-button:hover .tooltip {
+      opacity: 1;
+    }
+
+    /* Sidebar */
+    #sidebar {
+      position: fixed;
+      top: 0;
+      left: var(--gdn-iconbar-width);
+      width: var(--gdn-sidebar-width);
+      height: 100vh;
+      background-color: var(--gdn-bg-color);
+      border-right: 1px solid var(--gdn-border-color);
+      box-shadow: var(--gdn-shadow-lg);
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.3s ease;
+      transform: translateX(calc(-1 * var(--gdn-sidebar-width)));
+      z-index: 999;
+      overflow: hidden;
+    }
+
+    #sidebar.expanded {
+      transform: translateX(0);
+    }
+
+    #sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--gdn-border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background-color: var(--gdn-bg-color);
+    }
+
+    #sidebar-title {
+      font-size: 16px;
+      font-weight: 500;
+      color: var(--gdn-text-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    #sidebar-controls {
+      display: flex;
+      gap: 8px;
+    }
+
+    .header-button {
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .header-button:hover {
+      background-color: var(--gdn-hover-bg);
+    }
+
+    #sidebar-content {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* Tree Items */
+    .tree-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      cursor: pointer;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+
+    .tree-item:hover {
+      background-color: var(--gdn-hover-bg);
+    }
+
+    .tree-indent {
+      width: 20px;
+      flex-shrink: 0;
+    }
+
+    .tree-toggle {
+      width: 16px;
+      height: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-right: 4px;
+      cursor: pointer;
+      flex-shrink: 0;
+      font-size: 10px;
+      color: var(--gdn-text-secondary);
+    }
+
+    .tree-toggle.collapsed::before {
+      content: '▶';
+    }
+
+    .tree-toggle.expanded::before {
+      content: '▼';
+    }
+
+    .tree-toggle.empty {
+      visibility: hidden;
+    }
+
+    .tree-icon {
+      font-size: 20px;
+      margin-right: 8px;
+      flex-shrink: 0;
+    }
+
+    .tree-name {
+      flex: 1;
+      font-size: 13px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tree-children {
+      display: none;
+    }
+
+    .tree-children.expanded {
+      display: block;
+    }
+
+    /* Main Content */
+    #main-content {
+      padding: 80px 40px;
+      min-height: 100vh;
+      transition: margin-left 0.3s ease;
+    }
+
+    .info-box {
+      background: rgba(255, 255, 255, 0.95);
+      color: var(--gdn-text-primary);
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      max-width: 700px;
+      margin: 0 auto;
+    }
+
+    .info-box h2 {
+      margin-bottom: 20px;
+      color: var(--gdn-primary-color);
+    }
+
+    .info-box p {
+      font-size: 16px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+    }
+
+    .info-box ul {
+      margin: 20px 0;
+      font-size: 14px;
+    }
+
+    .info-box li {
+      margin: 8px 0;
+      list-style-position: inside;
+    }
+
+    .demo-note {
+      background-color: #fff3cd;
+      border: 1px solid #ffc107;
+      padding: 16px;
+      border-radius: 8px;
+      margin: 20px 0;
+      font-size: 14px;
+    }
+
+    .demo-note strong {
+      color: #856404;
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--gdn-bg-secondary);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--gdn-border-color);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Icon Bar (Always Visible) -->
+  <div id="iconbar">
+    <button class="icon-button active" onclick="toggleSidebar()" title="Folders">
+      📁
+      <span class="tooltip">Folders</span>
+    </button>
+
+    <button class="icon-button" title="Search">
+      🔍
+      <span class="tooltip">Search Drive</span>
+    </button>
+
+    <button class="icon-button" title="Create">
+      ➕
+      <span class="tooltip">Create New</span>
+    </button>
+
+    <div class="icon-spacer"></div>
+
+    <button class="icon-button toggle-button active" title="Toggle Extension">
+      🎭
+      <span class="tooltip">PREVIEW Mode</span>
+    </button>
+  </div>
+
+  <!-- Sidebar (Expandable) -->
+  <div id="sidebar" class="expanded">
+    <div id="sidebar-header">
+      <div id="sidebar-title">
+        <span style="font-size: 20px;">📁</span>
+        <span>My Drive 🎭</span>
+      </div>
+      <div id="sidebar-controls">
+        <button class="header-button" title="Refresh">
+          🔄
+        </button>
+        <button class="header-button" onclick="toggleSidebar()" title="Close">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <div id="sidebar-content">
+      <!-- Work Folder -->
+      <div class="tree-item" onclick="toggleFolder('work')">
+        <span class="tree-toggle expanded" id="toggle-work"></span>
+        <span class="tree-icon">📁</span>
+        <span class="tree-name">💼 Work</span>
+      </div>
+      <div class="tree-children expanded" id="children-work">
+        <div class="tree-item" onclick="toggleFolder('reports')">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle collapsed" id="toggle-reports"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">📊 Reports</span>
+        </div>
+        <div class="tree-children" id="children-reports">
+          <div class="tree-item">
+            <span class="tree-indent"></span>
+            <span class="tree-indent"></span>
+            <span class="tree-toggle empty"></span>
+            <span class="tree-icon">📝</span>
+            <span class="tree-name">Sales Report Jan 2024</span>
+          </div>
+          <div class="tree-item">
+            <span class="tree-indent"></span>
+            <span class="tree-indent"></span>
+            <span class="tree-toggle empty"></span>
+            <span class="tree-icon">📊</span>
+            <span class="tree-name">Analytics Dashboard</span>
+          </div>
+        </div>
+
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📝</span>
+          <span class="tree-name">Q4 2023 Review</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📊</span>
+          <span class="tree-name">2024 Budget</span>
+        </div>
+      </div>
+
+      <!-- Personal Folder -->
+      <div class="tree-item" onclick="toggleFolder('personal')">
+        <span class="tree-toggle collapsed" id="toggle-personal"></span>
+        <span class="tree-icon">📁</span>
+        <span class="tree-name">🏠 Personal</span>
+      </div>
+      <div class="tree-children" id="children-personal">
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">🍳 Recipes</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">✈️ Travel Plans</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📝</span>
+          <span class="tree-name">Shopping Wishlist</span>
+        </div>
+      </div>
+
+      <!-- Projects Folder -->
+      <div class="tree-item" onclick="toggleFolder('projects')">
+        <span class="tree-toggle expanded" id="toggle-projects"></span>
+        <span class="tree-icon">📁</span>
+        <span class="tree-name">🚀 Projects</span>
+      </div>
+      <div class="tree-children expanded" id="children-projects">
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">🌐 Website Redesign</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">📱 Mobile App Development</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📝</span>
+          <span class="tree-name">Project Timeline</span>
+        </div>
+      </div>
+
+      <!-- Photos Folder -->
+      <div class="tree-item" onclick="toggleFolder('photos')">
+        <span class="tree-toggle collapsed" id="toggle-photos"></span>
+        <span class="tree-icon">📁</span>
+        <span class="tree-name">📸 Photos</span>
+      </div>
+      <div class="tree-children" id="children-photos">
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">🏖️ Vacation 2023</span>
+        </div>
+        <div class="tree-item">
+          <span class="tree-indent"></span>
+          <span class="tree-toggle empty"></span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-name">👨‍👩‍👧‍👦 Family Photos</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main Content (Simulated Webpage) -->
+  <div id="main-content">
+    <div class="info-box">
+      <h2>🌐 Version 2: Content Script Injection</h2>
+      <p><strong>This is a standalone preview of the V2 UI</strong></p>
+
+      <div class="demo-note">
+        <strong>⚠️ Notice:</strong> The page content shifts to the right when the sidebar is expanded! This is intentional - it prevents the sidebar from covering your content.
+      </div>
+
+      <p>This shows how V2 integrates into any webpage:</p>
+      <ul>
+        <li>✅ <strong>Icon bar (60px)</strong> - Always visible on left when ON</li>
+        <li>✅ <strong>Expandable sidebar (280px)</strong> - Click folder icon to toggle</li>
+        <li>✅ <strong>Pushes content</strong> - Page shifts right (not covered)</li>
+        <li>✅ <strong>Per-tab control</strong> - Each tab can be ON/OFF independently</li>
+        <li>✅ <strong>Works anywhere</strong> - Any website, any page</li>
+      </ul>
+
+      <h3 style="margin-top: 30px; color: var(--gdn-primary-color);">🎮 Try This:</h3>
+      <ul>
+        <li>Click the <strong>📁 folder icon</strong> in the left icon bar to collapse the sidebar</li>
+        <li>Notice how this text <strong>shifts back to the left</strong></li>
+        <li>Click the <strong>X button</strong> in the sidebar header to close it</li>
+        <li>Click folder icon again to re-expand</li>
+        <li>Expand/collapse folders in the tree</li>
+      </ul>
+
+      <p style="margin-top: 30px; font-size: 13px; color: var(--gdn-text-secondary);">
+        <strong>Key Difference from V1:</strong> V1 is a separate side panel (doesn't affect page layout).
+        V2 injects into the page itself and pushes content when expanded.
+      </p>
+    </div>
+  </div>
+
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const body = document.body;
+
+      if (sidebar.classList.contains('expanded')) {
+        sidebar.classList.remove('expanded');
+        body.classList.remove('sidebar-expanded');
+      } else {
+        sidebar.classList.add('expanded');
+        body.classList.add('sidebar-expanded');
+      }
+    }
+
+    function toggleFolder(folderId) {
+      const toggle = document.getElementById('toggle-' + folderId);
+      const children = document.getElementById('children-' + folderId);
+
+      if (toggle && children) {
+        if (toggle.classList.contains('expanded')) {
+          toggle.classList.remove('expanded');
+          toggle.classList.add('collapsed');
+          children.classList.remove('expanded');
+        } else {
+          toggle.classList.remove('collapsed');
+          toggle.classList.add('expanded');
+          children.classList.add('expanded');
+        }
+      }
+    }
+  </script>
+</body>
+</html>
