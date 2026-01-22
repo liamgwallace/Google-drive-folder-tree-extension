@@ -53,7 +53,7 @@ function injectUI() {
   `;
 
   document.body.appendChild(root);
-  cache Elements();
+  cacheElements();
   attachEventListeners();
 
   console.log('[GDN Demo] UI injected');
@@ -79,9 +79,9 @@ function createIconBar() {
 
       <div class="gdn-icon-spacer"></div>
 
-      <button class="gdn-icon-button gdn-toggle-button active" id="gdn-toggle-btn" title="Toggle Extension">
-        🎭
-        <span class="gdn-tooltip">DEMO Mode</span>
+      <button class="gdn-icon-button gdn-close-btn" id="gdn-close-extension-btn" title="Close Extension">
+        ✕
+        <span class="gdn-tooltip">Close</span>
       </button>
     </div>
   `;
@@ -99,8 +99,8 @@ function createSidebar() {
           <button class="gdn-header-button" id="gdn-refresh-btn" title="Refresh">
             🔄
           </button>
-          <button class="gdn-header-button" id="gdn-close-sidebar-btn" title="Close">
-            ✕
+          <button class="gdn-header-button" id="gdn-close-sidebar-btn" title="Collapse">
+            ◀
           </button>
         </div>
       </div>
@@ -150,7 +150,7 @@ function cacheElements() {
     folderBtn: document.getElementById('gdn-folder-btn'),
     searchBtn: document.getElementById('gdn-search-btn'),
     createBtn: document.getElementById('gdn-create-btn'),
-    toggleBtn: document.getElementById('gdn-toggle-btn'),
+    closeExtensionBtn: document.getElementById('gdn-close-extension-btn'),
     refreshBtn: document.getElementById('gdn-refresh-btn'),
     closeSidebarBtn: document.getElementById('gdn-close-sidebar-btn'),
     treeContainer: document.getElementById('gdn-tree-container'),
@@ -162,7 +162,7 @@ function cacheElements() {
 // ========== EVENT LISTENERS ==========
 
 function attachEventListeners() {
-  GDN.elements.toggleBtn?.addEventListener('click', handleToggle);
+  GDN.elements.closeExtensionBtn?.addEventListener('click', closeExtension);
   GDN.elements.folderBtn?.addEventListener('click', handleFolderClick);
   GDN.elements.searchBtn?.addEventListener('click', handleSearchClick);
   GDN.elements.createBtn?.addEventListener('click', handleCreateClick);
@@ -183,36 +183,26 @@ function attachEventListeners() {
 
 // ========== ACTIVATION/DEACTIVATION ==========
 
-async function handleToggle() {
-  GDN.isActive = !GDN.isActive;
-
-  if (GDN.isActive) {
-    await activateExtension();
-  } else {
-    deactivateExtension();
-  }
-
-  GDN.elements.toggleBtn.classList.toggle('active', GDN.isActive);
-}
-
 async function activateExtension() {
   GDN.isActive = true;
   GDN.elements.root?.classList.add('gdn-active');
   GDN.elements.iconbar?.classList.remove('gdn-hidden');
+  document.body.classList.add('gdn-iconbar-active');
 
   await loadInitialData();
   showToast('🎭 Demo Drive Navigator activated (dummy data)', 'success');
 }
 
-function deactivateExtension() {
+function closeExtension() {
   GDN.isActive = false;
   GDN.elements.root?.classList.remove('gdn-active');
   GDN.elements.iconbar?.classList.add('gdn-hidden');
+  document.body.classList.remove('gdn-iconbar-active');
 
   collapseSidebar();
   closeSearchOverlay();
 
-  showToast('Demo Drive Navigator deactivated', 'success');
+  showToast('Drive Navigator closed', 'success');
 }
 
 // ========== DATA LOADING ==========
@@ -427,5 +417,24 @@ function escapeHtml(text) {
   div.textContent = text;
   return div.innerHTML;
 }
+
+// ========== MESSAGE HANDLING ==========
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  switch (request.action) {
+    case 'toggleExtension':
+      if (GDN.isActive) {
+        closeExtension();
+      } else {
+        activateExtension();
+      }
+      sendResponse({ success: true });
+      break;
+
+    default:
+      sendResponse({ success: false, error: 'Unknown action' });
+  }
+  return true; // Keep message channel open for async response
+});
 
 console.log('[GDN Demo] Content script loaded - No auth required!');

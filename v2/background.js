@@ -121,9 +121,11 @@ async function signIn() {
 
 async function checkAuth() {
   try {
-    await getAuthToken();
+    const token = await getAuthToken();
+    console.log('[GDN] Auth check: token exists =', !!token);
     return true;
   } catch (error) {
+    console.log('[GDN] Auth check: no token -', error.message);
     return false;
   }
 }
@@ -183,7 +185,9 @@ async function listFiles(folderId = 'root', options = {}) {
     q: query,
     fields: fields,
     pageSize: '100',
-    orderBy: 'folder,name'
+    orderBy: 'folder,name',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true'
   });
 
   const url = `${DRIVE_API_BASE}/files?${params}`;
@@ -206,7 +210,9 @@ async function searchFiles(searchTerm) {
     q: query,
     fields: 'files(id,name,mimeType,iconLink,webViewLink)',
     pageSize: '20',
-    orderBy: 'recency desc'
+    orderBy: 'recency desc',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true'
   });
 
   const url = `${DRIVE_API_BASE}/files?${params}`;
@@ -235,7 +241,9 @@ async function getRecentFiles() {
     fields: fields,
     pageSize: '20',
     orderBy: 'recency desc',
-    spaces: 'drive'
+    spaces: 'drive',
+    supportsAllDrives: 'true',
+    includeItemsFromAllDrives: 'true'
   });
 
   const url = `${DRIVE_API_BASE}/files?${params}`;
@@ -253,8 +261,33 @@ async function getRecentFiles() {
 }
 
 async function deleteFile(fileId) {
-  const url = `${DRIVE_API_BASE}/files/${fileId}`;
-  await makeApiRequest(url, { method: 'DELETE' });
+  const params = new URLSearchParams({
+    supportsAllDrives: 'true'
+  });
+
+  const url = `${DRIVE_API_BASE}/files/${fileId}?${params}`;
+
+  const token = await getAuthToken();
+  const response = await fetch(url, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
+  if (response.status === 401) {
+    await new Promise((resolve) => {
+      chrome.identity.removeCachedAuthToken({ token }, resolve);
+    });
+    throw new Error('Token expired');
+  }
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Delete failed: ${response.status}`);
+  }
+
+  // DELETE returns empty body (204 No Content), don't try to parse JSON
   clearCache();
   return { success: true };
 }
@@ -262,6 +295,7 @@ async function deleteFile(fileId) {
 async function moveFile(fileId, newParentId, oldParentId) {
   const params = new URLSearchParams({
     addParents: newParentId,
+    supportsAllDrives: 'true',
     ...(oldParentId && { removeParents: oldParentId })
   });
 
@@ -272,7 +306,11 @@ async function moveFile(fileId, newParentId, oldParentId) {
 }
 
 async function renameFile(fileId, newName) {
-  const url = `${DRIVE_API_BASE}/files/${fileId}`;
+  const params = new URLSearchParams({
+    supportsAllDrives: 'true'
+  });
+
+  const url = `${DRIVE_API_BASE}/files/${fileId}?${params}`;
   const response = await makeApiRequest(url, {
     method: 'PATCH',
     body: JSON.stringify({ name: newName })
@@ -288,7 +326,11 @@ async function createFile(name, mimeType, parentId = 'root') {
     parents: [parentId]
   };
 
-  const url = `${DRIVE_API_BASE}/files`;
+  const params = new URLSearchParams({
+    supportsAllDrives: 'true'
+  });
+
+  const url = `${DRIVE_API_BASE}/files?${params}`;
   const response = await makeApiRequest(url, {
     method: 'POST',
     body: JSON.stringify(metadata)
@@ -302,7 +344,12 @@ async function createFolder(name, parentId = 'root') {
 }
 
 async function getFolderMetadata(folderId) {
-  const url = `${DRIVE_API_BASE}/files/${folderId}?fields=id,name,mimeType,webViewLink`;
+  const params = new URLSearchParams({
+    fields: 'id,name,mimeType,webViewLink',
+    supportsAllDrives: 'true'
+  });
+
+  const url = `${DRIVE_API_BASE}/files/${folderId}?${params}`;
   const response = await makeApiRequest(url);
 
   // Validate it's a folder
@@ -381,6 +428,46 @@ async function setCurrentRoot(rootId) {
     chrome.storage.local.set({ currentRootId: rootId }, () => {
       resolve({ success: true });
     });
+  });
+}
+
+// ========== UI STATE PERSISTENCE ==========
+
+async function getUIState() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['uiState'], (result) => {
+      resolve(result.uiState || {
+        sidebarExpanded: false,
+        expandedFolders: [],
+        lastRootId: 'root'
+      });
+    });
+  });
+}
+
+async function saveUIState(state) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ uiState: state }, resolve);
+  });
+}
+
+// ========== SETTINGS STORAGE ==========
+
+async function getSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['settings'], (result) => {
+      resolve(result.settings || {
+        startupMode: 'manual',  // 'manual' or 'auto'
+        darkMode: false,
+        autoLoadDomains: ['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com']
+      });
+    });
+  });
+}
+
+async function saveSettings(settings) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ settings }, resolve);
   });
 }
 
@@ -569,8 +656,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           response = { success: true };
           break;
 
+        case 'getUIState':
+          response = await getUIState();
+          break;
+
+        case 'saveUIState':
+          await saveUIState(request.state);
+          response = { success: true };
+          break;
+
         case 'getFolderMetadata':
           response = await getFolderMetadata(request.folderId);
+          break;
+
+        case 'getSettings':
+          response = await getSettings();
+          break;
+
+        case 'saveSettings':
+          await saveSettings(request.settings);
+          response = { success: true };
           break;
 
         default:
@@ -602,12 +707,65 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 // ========== BROWSER ACTION ==========
 
+// Check if URL is restricted (cannot inject scripts)
+function isRestrictedUrl(url) {
+  if (!url) return true;
+
+  const restrictedProtocols = [
+    'chrome://',
+    'chrome-extension://',
+    'edge://',
+    'about:',
+    'data:',
+    'file://',
+    'view-source:'
+  ];
+
+  const restrictedDomains = [
+    'chrome.google.com/webstore',
+    'chromewebstore.google.com',
+    'microsoftedge.microsoft.com/addons'
+  ];
+
+  if (restrictedProtocols.some(protocol => url.startsWith(protocol))) {
+    return true;
+  }
+
+  if (restrictedDomains.some(domain => url.includes(domain))) {
+    return true;
+  }
+
+  return false;
+}
+
 chrome.action.onClicked.addListener(async (tab) => {
+  // Check if page is restricted
+  if (isRestrictedUrl(tab.url)) {
+    console.log('[GDN] Cannot run on restricted pages:', tab.url);
+    return;
+  }
+
   // Toggle extension for current tab
   try {
     await chrome.tabs.sendMessage(tab.id, { action: 'toggleExtension' });
   } catch (error) {
-    console.error('[GDN] Failed to toggle extension:', error);
+    // Content script not loaded - inject it
+    console.log('[GDN] Content script not loaded, injecting...');
+    try {
+      await chrome.scripting.insertCSS({
+        target: { tabId: tab.id },
+        files: ['content.css']
+      });
+
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ['content.js']
+      });
+
+      console.log('[GDN] Content script injected successfully');
+    } catch (injectError) {
+      console.error('[GDN] Failed to inject content script:', injectError);
+    }
   }
 });
 

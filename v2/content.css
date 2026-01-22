@@ -23,6 +23,17 @@
   --gdn-transition-speed: 0.3s;
 }
 
+/* Dark Mode Variables */
+#gdn-root.gdn-dark-mode {
+  --gdn-bg-color: #1e1e1e;
+  --gdn-bg-secondary: #2d2d2d;
+  --gdn-border-color: #404040;
+  --gdn-text-primary: #e0e0e0;
+  --gdn-text-secondary: #a0a0a0;
+  --gdn-hover-bg: #333333;
+  --gdn-selected-bg: #1a3a5c;
+}
+
 /* Reset for injected elements */
 #gdn-root,
 #gdn-root * {
@@ -70,6 +81,7 @@
 
 #gdn-iconbar.gdn-hidden {
   transform: translateX(calc(-1 * var(--gdn-iconbar-width)));
+  pointer-events: none;
 }
 
 .gdn-icon-button {
@@ -113,7 +125,7 @@
   position: absolute;
   left: calc(100% + 8px);
   background-color: var(--gdn-text-primary);
-  color: white;
+  color: var(--gdn-bg-color);
   padding: 6px 12px;
   border-radius: 4px;
   font-size: 12px;
@@ -126,6 +138,12 @@
 
 .gdn-icon-button:hover .gdn-tooltip {
   opacity: 1;
+}
+
+/* Ensure tooltips are visible in both modes */
+#gdn-root.gdn-dark-mode .gdn-tooltip {
+  background-color: #e0e0e0;
+  color: #1e1e1e;
 }
 
 /* Icon button spacing */
@@ -164,10 +182,41 @@
   transform: translateX(0);
 }
 
-/* When sidebar is expanded, push page content */
-body.gdn-sidebar-expanded {
+/* Sidebar resize handle */
+#gdn-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  background: transparent;
+  z-index: 10;
+}
+
+#gdn-sidebar-resize-handle:hover,
+#gdn-sidebar-resize-handle.dragging {
+  background-color: var(--gdn-primary-color);
+}
+
+/* When icon bar is active (not pinned), push content by icon bar width */
+body.gdn-iconbar-active {
+  margin-left: var(--gdn-iconbar-width) !important;
+}
+
+/* When sidebar is pinned AND expanded, push content by full width */
+body.gdn-sidebar-pinned {
   margin-left: calc(var(--gdn-iconbar-width) + var(--gdn-sidebar-width)) !important;
-  transition: margin-left var(--gdn-transition-speed) ease !important;
+}
+
+/* Pin button active state */
+#gdn-pin-btn.active {
+  background-color: var(--gdn-selected-bg);
+  color: var(--gdn-primary-color);
+}
+
+#gdn-pin-btn.active svg {
+  fill: var(--gdn-primary-color);
 }
 
 /* Sidebar Header */
@@ -256,8 +305,8 @@ body.gdn-sidebar-expanded {
 .gdn-recent-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 16px;
+  gap: 0px;
+  padding: 6px 16px 6px 12px !important;
   cursor: pointer;
   transition: background-color 0.2s;
   border-left: 3px solid transparent;
@@ -271,6 +320,7 @@ body.gdn-sidebar-expanded {
 .gdn-recent-icon {
   width: 20px;
   height: 20px;
+  margin-right: 10px !important;
   flex-shrink: 0;
 }
 
@@ -288,6 +338,36 @@ body.gdn-sidebar-expanded {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  position: relative;
+}
+
+/* Tooltip for recent items */
+.gdn-recent-item:hover .gdn-recent-name::after {
+  content: attr(data-full-name);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  background-color: #333333;
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.gdn-recent-item:hover .gdn-recent-name[data-full-name]::after {
+  opacity: 1;
+}
+
+/* Dark mode tooltip fix for recent items */
+#gdn-root.gdn-dark-mode .gdn-recent-item:hover .gdn-recent-name::after {
+  background-color: #e8e8e8;
+  color: #1e1e1e;
 }
 
 .gdn-recent-time {
@@ -301,16 +381,68 @@ body.gdn-sidebar-expanded {
   margin: 8px 0;
 }
 
+/* Section Header */
+.gdn-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gdn-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+.gdn-section-header svg {
+  width: 16px;
+  height: 16px;
+  color: var(--gdn-text-secondary);
+}
+
+/* ========== COLLAPSIBLE HEADER ========== */
+
+.gdn-collapsible-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.gdn-collapsible-header:hover {
+  background-color: var(--gdn-hover-bg);
+}
+
+.gdn-collapse-toggle {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 4px;
+}
+
+.gdn-collapse-toggle::before {
+  content: '\25B6';
+  font-size: 10px;
+  color: var(--gdn-text-secondary);
+  transition: transform 0.2s;
+}
+
+.gdn-collapse-toggle.expanded::before {
+  transform: rotate(90deg);
+}
+
 /* ========== FOLDER TREE STYLES ========== */
 
 /* Folder Tree Styles (similar to v1 but namespaced) */
 .gdn-tree-item {
   display: flex;
   align-items: center;
-  padding: 8px 12px;
+  padding: 6px 12px 6px 8px !important;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.2s;
+  position: relative;
 }
 
 .gdn-tree-item:hover {
@@ -332,7 +464,7 @@ body.gdn-sidebar-expanded {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-right: 4px;
+  margin-right: 8px !important;
   cursor: pointer;
   flex-shrink: 0;
 }
@@ -361,7 +493,7 @@ body.gdn-sidebar-expanded {
 .gdn-tree-icon {
   width: 20px;
   height: 20px;
-  margin-right: 8px;
+  margin-right: 10px !important;
   flex-shrink: 0;
 }
 
@@ -371,6 +503,40 @@ body.gdn-sidebar-expanded {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  position: relative;
+}
+
+/* Tooltip for truncated names */
+.gdn-tree-name {
+  position: relative;
+}
+
+.gdn-tree-item:hover .gdn-tree-name::after {
+  content: attr(data-full-name);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  background-color: #333333;
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.gdn-tree-item:hover .gdn-tree-name[data-full-name]::after {
+  opacity: 1;
+}
+
+/* Dark mode tooltip fix */
+#gdn-root.gdn-dark-mode .gdn-tree-item:hover .gdn-tree-name::after {
+  background-color: #e8e8e8;
+  color: #1e1e1e;
 }
 
 .gdn-tree-children {
@@ -406,11 +572,11 @@ body.gdn-sidebar-expanded {
 }
 
 #gdn-search-popup {
-  width: 400px;
+  width: 560px;
   max-width: 90vw;
   background-color: var(--gdn-bg-color);
   border-radius: 8px;
-  box-shadow: var(--gdn-shadow-lg);
+  box-shadow: 0 8px 24px rgba(60, 64, 67, 0.3);
   overflow: hidden;
   transform: translateY(-20px);
   transition: transform 0.2s;
@@ -461,7 +627,7 @@ body.gdn-sidebar-expanded {
 }
 
 .gdn-search-suggestion {
-  padding: 12px 16px;
+  padding: 12px 20px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -481,6 +647,7 @@ body.gdn-sidebar-expanded {
 .gdn-search-icon {
   width: 24px;
   height: 24px;
+  margin-right: 12px !important;
   flex-shrink: 0;
 }
 
@@ -538,8 +705,8 @@ body.gdn-sidebar-expanded {
 #gdn-modal {
   background-color: var(--gdn-bg-color);
   border-radius: 8px;
-  box-shadow: var(--gdn-shadow-lg);
-  min-width: 320px;
+  box-shadow: 0 8px 24px rgba(60, 64, 67, 0.3);
+  min-width: 440px;
   max-width: 90vw;
   max-height: 90vh;
   display: flex;
@@ -553,7 +720,7 @@ body.gdn-sidebar-expanded {
 }
 
 #gdn-modal-header {
-  padding: 16px;
+  padding: 20px 24px;
   border-bottom: 1px solid var(--gdn-border-color);
   display: flex;
   justify-content: space-between;
@@ -561,8 +728,9 @@ body.gdn-sidebar-expanded {
 }
 
 #gdn-modal-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 500;
+  color: var(--gdn-text-primary);
 }
 
 #gdn-modal-close {
@@ -582,23 +750,32 @@ body.gdn-sidebar-expanded {
 }
 
 #gdn-modal-body {
-  padding: 16px;
+  padding: 20px 24px;
   overflow-y: auto;
   flex: 1;
 }
 
+#gdn-modal-body p {
+  margin-bottom: 12px;
+  line-height: 1.6;
+}
+
+#gdn-modal-body p:last-child {
+  margin-bottom: 0;
+}
+
 #gdn-modal-footer {
-  padding: 16px;
+  padding: 16px 24px;
   border-top: 1px solid var(--gdn-border-color);
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 12px;
 }
 
 /* ========== BUTTONS ========== */
 
 .gdn-btn {
-  padding: 8px 16px;
+  padding: 10px 32px;
   border: 1px solid var(--gdn-border-color);
   border-radius: 4px;
   background-color: var(--gdn-bg-color);
@@ -606,6 +783,7 @@ body.gdn-sidebar-expanded {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
+  min-width: 100px;
 }
 
 .gdn-btn:hover {
@@ -721,11 +899,20 @@ body.gdn-sidebar-expanded {
 }
 
 .gdn-root-folders-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
   font-weight: 600;
   color: var(--gdn-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.gdn-root-folders-title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--gdn-text-secondary);
 }
 
 .gdn-root-add-btn {
@@ -755,11 +942,11 @@ body.gdn-sidebar-expanded {
 .gdn-root-folder-item {
   display: flex;
   align-items: center;
-  padding: 8px 16px;
+  padding: 6px 16px 6px 24px !important;
   cursor: pointer;
   user-select: none;
   transition: background-color 0.2s;
-  gap: 8px;
+  gap: 10px;
 }
 
 .gdn-root-folder-item:hover {
@@ -776,6 +963,8 @@ body.gdn-sidebar-expanded {
 }
 
 .gdn-root-folder-icon {
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   color: var(--gdn-text-secondary);
 }
@@ -786,6 +975,36 @@ body.gdn-sidebar-expanded {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-size: 13px;
+  position: relative;
+}
+
+/* Tooltip for root folder items */
+.gdn-root-folder-item:hover .gdn-root-folder-name::after {
+  content: attr(data-full-name);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  background-color: #333333;
+  color: #ffffff;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  white-space: nowrap;
+  z-index: 10000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.gdn-root-folder-item:hover .gdn-root-folder-name[data-full-name]::after {
+  opacity: 1;
+}
+
+/* Dark mode tooltip fix for root folder items */
+#gdn-root.gdn-dark-mode .gdn-root-folder-item:hover .gdn-root-folder-name::after {
+  background-color: #e8e8e8;
+  color: #1e1e1e;
 }
 
 .gdn-empty-message {
@@ -795,36 +1014,75 @@ body.gdn-sidebar-expanded {
   font-size: 12px;
 }
 
-/* Context Menu */
-.gdn-context-menu {
+/* Context Menu - Unified styling for both root folder and tree menus */
+.gdn-context-menu,
+#gdn-root-context-menu {
+  position: fixed;
   background-color: var(--gdn-bg-color);
   border: 1px solid var(--gdn-border-color);
   border-radius: 4px;
   box-shadow: var(--gdn-shadow-lg);
-  min-width: 150px;
+  min-width: 200px;
   z-index: 2147483647;
   overflow: hidden;
+  pointer-events: auto;
 }
 
-.gdn-context-menu-item {
-  padding: 8px 16px;
+.gdn-context-menu .gdn-context-menu-item,
+#gdn-root-context-menu .gdn-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
   cursor: pointer;
   font-size: 13px;
   color: var(--gdn-text-primary);
   transition: background-color 0.2s;
+  user-select: none;
 }
 
-.gdn-context-menu-item:hover {
+.gdn-context-menu .gdn-context-menu-item:hover,
+#gdn-root-context-menu .gdn-context-menu-item:hover {
   background-color: var(--gdn-hover-bg);
 }
 
-.gdn-context-menu-item:active {
-  background-color: var(--gdn-selected-bg);
+.gdn-context-menu .gdn-context-menu-item svg,
+#gdn-root-context-menu .gdn-context-menu-item svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--gdn-text-secondary);
+}
+
+.gdn-context-menu .gdn-context-menu-item span,
+#gdn-root-context-menu .gdn-context-menu-item span {
+  flex: 1;
+}
+
+.gdn-context-menu .gdn-context-menu-item.gdn-danger,
+#gdn-root-context-menu .gdn-context-menu-item.gdn-danger {
+  color: var(--gdn-danger-color);
+}
+
+.gdn-context-menu .gdn-context-menu-item.gdn-danger svg,
+#gdn-root-context-menu .gdn-context-menu-item.gdn-danger svg {
+  color: var(--gdn-danger-color);
+}
+
+.gdn-context-menu .gdn-context-menu-separator,
+#gdn-root-context-menu .gdn-context-menu-separator {
+  height: 1px;
+  background-color: var(--gdn-border-color);
+  margin: 4px 0;
 }
 
 /* Modal Form Elements */
 .gdn-modal-section {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+}
+
+.gdn-modal-section:last-child {
+  margin-bottom: 0;
 }
 
 .gdn-label {
@@ -837,17 +1095,24 @@ body.gdn-sidebar-expanded {
 
 .gdn-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid var(--gdn-border-color);
   border-radius: 4px;
   font-size: 13px;
   font-family: inherit;
-  transition: border-color 0.2s;
+  background-color: var(--gdn-bg-color);
+  color: var(--gdn-text-primary);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .gdn-input:focus {
   outline: none;
   border-color: var(--gdn-primary-color);
+  box-shadow: 0 0 0 3px rgba(66, 133, 244, 0.1);
+}
+
+.gdn-input:hover:not(:focus) {
+  border-color: var(--gdn-text-secondary);
 }
 
 .gdn-help-text {
@@ -905,7 +1170,7 @@ body.gdn-sidebar-expanded {
   display: none;
 }
 
-.gdn-context-menu-item {
+#gdn-context-menu .gdn-context-menu-item {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -918,30 +1183,30 @@ body.gdn-sidebar-expanded {
   user-select: none;
 }
 
-.gdn-context-menu-item:hover {
+#gdn-context-menu .gdn-context-menu-item:hover {
   background-color: var(--gdn-hover-bg);
 }
 
-.gdn-context-menu-item svg {
+#gdn-context-menu .gdn-context-menu-item svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
   color: var(--gdn-text-secondary);
 }
 
-.gdn-context-menu-item span {
+#gdn-context-menu .gdn-context-menu-item span {
   flex: 1;
 }
 
-.gdn-context-menu-item.gdn-danger {
+#gdn-context-menu .gdn-context-menu-item.gdn-danger {
   color: var(--gdn-danger-color);
 }
 
-.gdn-context-menu-item.gdn-danger svg {
+#gdn-context-menu .gdn-context-menu-item.gdn-danger svg {
   color: var(--gdn-danger-color);
 }
 
-.gdn-context-menu-separator {
+#gdn-context-menu .gdn-context-menu-separator {
   height: 1px;
   background-color: var(--gdn-border-color);
   margin: 4px 0;
@@ -979,12 +1244,16 @@ body.gdn-sidebar-expanded {
 /* ========== MODAL FORM ELEMENTS ========== */
 
 .gdn-form-group {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
+}
+
+.gdn-form-group:last-child {
+  margin-bottom: 0;
 }
 
 .gdn-form-group label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-size: 13px;
   font-weight: 500;
   color: var(--gdn-text-primary);
@@ -1025,7 +1294,7 @@ body.gdn-sidebar-expanded {
 .gdn-folder-picker-item {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   padding: 10px 16px;
   cursor: pointer;
   transition: background-color 0.2s;
@@ -1043,10 +1312,13 @@ body.gdn-sidebar-expanded {
 .gdn-folder-picker-item.selected {
   background-color: var(--gdn-selected-bg);
   color: var(--gdn-primary-color);
+  font-weight: 500;
 }
 
 .gdn-folder-picker-item svg {
   flex-shrink: 0;
+  width: 20px;
+  height: 20px;
   color: var(--gdn-text-secondary);
 }
 
@@ -1114,11 +1386,346 @@ body.gdn-sidebar-expanded {
 }
 
 .gdn-error-message {
-  padding: 12px;
+  padding: 12px 16px;
   background-color: #fce8e6;
   border: 1px solid var(--gdn-danger-color);
   border-radius: 4px;
   color: var(--gdn-danger-color);
-  font-size: 12px;
+  font-size: 13px;
   margin-top: 12px;
+  line-height: 1.5;
+}
+
+/* ========== SETTINGS STYLES ========== */
+
+.gdn-settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gdn-setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.gdn-setting-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+}
+
+.gdn-setting-help {
+  font-size: 12px;
+  color: var(--gdn-text-secondary);
+}
+
+.gdn-select {
+  padding: 6px 12px;
+  border: 1px solid var(--gdn-border-color);
+  border-radius: 4px;
+  background: var(--gdn-bg-color);
+  color: var(--gdn-text-primary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.gdn-select:focus {
+  outline: none;
+  border-color: var(--gdn-primary-color);
+}
+
+.gdn-toggle {
+  width: 40px;
+  height: 20px;
+  cursor: pointer;
+}
+
+/* ========== DARK MODE COMPREHENSIVE FIXES ========== */
+
+/* Ensure all text in dark mode uses variables */
+#gdn-root.gdn-dark-mode,
+#gdn-root.gdn-dark-mode * {
+  color: var(--gdn-text-primary);
+}
+
+/* Tree item text */
+.gdn-tree-name {
+  color: var(--gdn-text-primary);
+}
+
+/* Recent file text */
+.gdn-recent-name {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-recent-time {
+  color: var(--gdn-text-secondary);
+}
+
+/* Root folder text */
+.gdn-root-folder-name {
+  color: var(--gdn-text-primary);
+}
+
+/* Search input */
+#gdn-search-input {
+  color: var(--gdn-text-primary);
+  background-color: var(--gdn-bg-color);
+}
+
+#gdn-search-input::placeholder {
+  color: var(--gdn-text-secondary);
+}
+
+/* Search popup background */
+#gdn-search-popup {
+  background-color: var(--gdn-bg-color);
+}
+
+/* Search suggestion text */
+.gdn-search-name {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-search-path {
+  color: var(--gdn-text-secondary);
+}
+
+/* Modal styles */
+#gdn-modal {
+  background-color: var(--gdn-bg-color);
+}
+
+#gdn-modal-title {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-modal-body {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-modal-body p {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-modal-body label {
+  color: var(--gdn-text-primary);
+}
+
+/* Modal close button */
+#gdn-modal-close {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-modal-close svg {
+  fill: var(--gdn-text-primary);
+}
+
+/* Header buttons in dark mode */
+.gdn-header-button {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-header-button svg {
+  fill: currentColor;
+}
+
+/* Form inputs */
+.gdn-input {
+  background-color: var(--gdn-bg-color);
+  color: var(--gdn-text-primary);
+  border-color: var(--gdn-border-color);
+}
+
+/* Select dropdowns */
+.gdn-select {
+  background-color: var(--gdn-bg-color);
+  color: var(--gdn-text-primary);
+  border-color: var(--gdn-border-color);
+}
+
+/* Settings modal specific */
+.gdn-setting-label {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-setting-label span {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-setting-help {
+  color: var(--gdn-text-secondary);
+}
+
+/* Auth screen */
+#gdn-auth-screen h3 {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-auth-screen p {
+  color: var(--gdn-text-secondary);
+}
+
+/* Sidebar header title */
+#gdn-sidebar-title {
+  color: var(--gdn-text-primary);
+}
+
+#gdn-sidebar-title span {
+  color: var(--gdn-text-primary);
+}
+
+/* Section titles */
+.gdn-section-title,
+.gdn-root-folders-title {
+  color: var(--gdn-text-secondary);
+}
+
+/* Context menu - Dark mode support */
+/* For menus inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu,
+#gdn-root.gdn-dark-mode .gdn-context-menu {
+  background-color: #1e1e1e;
+  border-color: #404040;
+}
+
+/* For menus with dark mode class (appended to body) */
+#gdn-root-context-menu.gdn-dark-mode,
+.gdn-context-menu.gdn-dark-mode {
+  background-color: #1e1e1e;
+  border-color: #404040;
+}
+
+/* Menu items in dark mode - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item {
+  color: #e0e0e0;
+}
+
+/* Menu items in dark mode - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item {
+  color: #e0e0e0;
+}
+
+/* Hover state - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item:hover,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item:hover {
+  background-color: #333333;
+}
+
+/* Hover state - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item:hover,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item:hover {
+  background-color: #333333;
+}
+
+/* Text color - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item span,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item span {
+  color: #e0e0e0;
+}
+
+/* Text color - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item span,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item span {
+  color: #e0e0e0;
+}
+
+/* Icon color - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item svg,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item svg {
+  color: #a0a0a0;
+}
+
+/* Icon color - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item svg,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item svg {
+  color: #a0a0a0;
+}
+
+/* Danger items - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item.gdn-danger,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item.gdn-danger {
+  color: #ea4335;
+}
+
+/* Danger items - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item.gdn-danger,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item.gdn-danger {
+  color: #ea4335;
+}
+
+/* Danger item icons - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-item.gdn-danger svg,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-item.gdn-danger svg {
+  color: #ea4335;
+}
+
+/* Danger item icons - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-item.gdn-danger svg,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-item.gdn-danger svg {
+  color: #ea4335;
+}
+
+/* Separator - inside #gdn-root */
+#gdn-root.gdn-dark-mode #gdn-context-menu .gdn-context-menu-separator,
+#gdn-root.gdn-dark-mode .gdn-context-menu .gdn-context-menu-separator {
+  background-color: #404040;
+}
+
+/* Separator - with dark mode class */
+#gdn-root-context-menu.gdn-dark-mode .gdn-context-menu-separator,
+.gdn-context-menu.gdn-dark-mode .gdn-context-menu-separator {
+  background-color: #404040;
+}
+
+/* Folder picker */
+.gdn-folder-picker-item {
+  color: var(--gdn-text-primary);
+}
+
+.gdn-folder-picker-item span {
+  color: var(--gdn-text-primary);
+}
+
+/* Warning text */
+.gdn-warning-text {
+  color: var(--gdn-text-secondary);
+}
+
+/* Help text */
+.gdn-help-text {
+  color: var(--gdn-text-secondary);
+}
+
+/* Empty message */
+.gdn-empty-message {
+  color: var(--gdn-text-secondary);
+}
+
+/* Spinner */
+.gdn-spinner {
+  color: var(--gdn-text-secondary);
+}
+
+/* SVG icons should inherit color */
+#gdn-root svg {
+  fill: currentColor;
+}
+
+/* Specific icon colors */
+.gdn-tree-toggle::before {
+  color: var(--gdn-text-secondary);
+}
+
+.gdn-root-folder-icon {
+  color: var(--gdn-text-secondary);
+}
+
+#gdn-root.gdn-dark-mode .gdn-root-folder-item.active .gdn-root-folder-icon {
+  color: var(--gdn-primary-color);
 }

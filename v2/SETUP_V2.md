@@ -40,7 +40,7 @@ Version 2 integrates into **any webpage** via content script injection. The exte
    - Developer contact: Your email
 4. Click "Save and Continue"
 
-5. **Scopes** page:
+5. **Data Access** page:
    - Click "Add or Remove Scopes"
    - Add: `https://www.googleapis.com/auth/drive`
    - Click "Update" → "Save and Continue"

@@ -8,7 +8,8 @@
     "storage",
     "tabs",
     "scripting",
-    "contextMenus"
+    "contextMenus",
+    "webNavigation"
   ],
   "host_permissions": [
     "https://www.googleapis.com/*",
@@ -38,7 +39,7 @@
     }
   },
   "oauth2": {
-    "client_id": "YOUR_CLIENT_ID.apps.googleusercontent.com",
+    "client_id": "375157277463-jkdooppgcp0lhhbeb894t8hkrqlt6tun.apps.googleusercontent.com",
     "scopes": [
       "https://www.googleapis.com/auth/drive"
     ]

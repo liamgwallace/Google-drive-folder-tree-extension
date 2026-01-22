@@ -8,6 +8,8 @@ const GDN = {
   isActive: false,
   isAuthenticated: false,
   sidebarExpanded: false,
+  isPinned: false,
+  isResizing: false,
   searchOpen: false,
   elements: {},
   state: {
@@ -18,7 +20,8 @@ const GDN = {
     contextMenuTarget: null,
     recentFiles: [],
     currentRootId: 'root',
-    rootFolders: []
+    rootFolders: [],
+    recentFilesCollapsed: true  // Default to collapsed
   }
 };
 
@@ -31,22 +34,57 @@ if (document.readyState === 'loading') {
 
 async function init() {
   try {
-    // Check if extension should be active on this tab
+    // Load UI state from storage FIRST
+    const uiState = await sendMessageToBackground({ action: 'getUIState' });
+    if (uiState.success && uiState.data) {
+      GDN.state.expandedFolders = new Set(uiState.data.expandedFolders || []);
+      GDN.state.currentRootId = uiState.data.lastRootId || 'root';
+      GDN.sidebarExpanded = uiState.data.sidebarExpanded || false;
+      GDN.state.recentFilesCollapsed = uiState.data.recentFilesCollapsed !== false;
+      GDN.isPinned = uiState.data.isPinned || false;
+
+      // Load saved sidebar width
+      if (uiState.data.sidebarWidth) {
+        document.documentElement.style.setProperty('--gdn-sidebar-width', uiState.data.sidebarWidth + 'px');
+      }
+    }
+
+    // Load settings
+    const settingsResponse = await sendMessageToBackground({ action: 'getSettings' });
+    const settings = settingsResponse.success ? settingsResponse.data : { startupMode: 'manual', darkMode: false };
+    GDN.settings = settings;
+
+    // Check if extension was active (from tab state OR UI state showing it was in use)
     const tabState = await getTabState();
-    GDN.isActive = tabState?.isActive || false;
+    const wasActive = tabState?.isActive || GDN.sidebarExpanded || GDN.isPinned;
 
-    // Inject UI elements
-    injectUI();
+    // Check auto-activate for Google domains
+    if (!wasActive && settings.startupMode === 'auto') {
+      const autoLoadDomains = settings.autoLoadDomains || ['drive.google.com', 'docs.google.com', 'sheets.google.com', 'slides.google.com'];
+      const currentHost = window.location.hostname;
+      if (autoLoadDomains.some(domain => currentHost.includes(domain))) {
+        GDN.isActive = true;
+      }
+    } else if (wasActive) {
+      GDN.isActive = true;
+    }
 
-    // If active, show UI
+    // If active, inject UI and restore state
     if (GDN.isActive) {
-      activateExtension();
+      injectUI();
+
+      if (settings.darkMode) {
+        applyDarkMode(true);
+      }
+
+      // Activate and restore previous state
+      await activateExtensionWithState();
     }
 
     // Listen for messages from background
     chrome.runtime.onMessage.addListener(handleMessage);
 
-    console.log('[GDN] Initialized', { isActive: GDN.isActive });
+    console.log('[GDN] Initialized', { isActive: GDN.isActive, sidebarExpanded: GDN.sidebarExpanded, isPinned: GDN.isPinned });
   } catch (error) {
     console.error('[GDN] Initialization failed:', error);
   }
@@ -91,13 +129,6 @@ function injectUI() {
 function createIconBar() {
   return `
     <div id="gdn-iconbar" class="${GDN.isActive ? '' : 'gdn-hidden'}">
-      <button class="gdn-icon-button" id="gdn-folder-btn" title="Folders">
-        <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
-        </svg>
-        <span class="gdn-tooltip">Folders</span>
-      </button>
-
       <button class="gdn-icon-button" id="gdn-search-btn" title="Search">
         <svg viewBox="0 0 24 24" fill="currentColor">
           <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/>
@@ -105,20 +136,27 @@ function createIconBar() {
         <span class="gdn-tooltip">Search Drive</span>
       </button>
 
-      <button class="gdn-icon-button" id="gdn-create-btn" title="Create">
+      <button class="gdn-icon-button" id="gdn-folder-btn" title="Folders">
         <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
+          <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
         </svg>
-        <span class="gdn-tooltip">Create New</span>
+        <span class="gdn-tooltip">Folders</span>
       </button>
 
       <div class="gdn-icon-spacer"></div>
 
-      <button class="gdn-icon-button gdn-toggle-button ${GDN.isActive ? 'active' : ''}" id="gdn-toggle-btn" title="Toggle Extension">
+      <button class="gdn-icon-button" id="gdn-settings-btn" title="Settings">
         <svg viewBox="0 0 24 24" fill="currentColor">
-          <path d="M17 7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h10c2.76 0 5-2.24 5-5s-2.24-5-5-5zM7 15c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3z"/>
+          <path d="M19.14 12.94c.04-.31.06-.63.06-.94 0-.31-.02-.63-.06-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22l-1.91 3.32c-.12.21-.08.47.12.61l2.03 1.58c-.04.31-.07.63-.07.94s.02.63.06.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
         </svg>
-        <span class="gdn-tooltip">${GDN.isActive ? 'Turn OFF' : 'Turn ON'}</span>
+        <span class="gdn-tooltip">Settings</span>
+      </button>
+
+      <button class="gdn-icon-button gdn-toggle-button" id="gdn-close-btn" title="Close Extension">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+        </svg>
+        <span class="gdn-tooltip">Close Extension</span>
       </button>
     </div>
   `;
@@ -147,7 +185,7 @@ function createSidebar() {
           </button>
           <button class="gdn-header-button" id="gdn-close-sidebar-btn" title="Close">
             <svg viewBox="0 0 24 24" fill="currentColor">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+              <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/>
             </svg>
           </button>
         </div>
@@ -162,7 +200,12 @@ function createSidebar() {
         <div id="gdn-main-content" class="gdn-hidden">
           <div id="gdn-root-folders-section">
             <div class="gdn-root-folders-header">
-              <span class="gdn-root-folders-title">Root Folders</span>
+              <span class="gdn-root-folders-title">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+                </svg>
+                Root Folders
+              </span>
               <button class="gdn-root-add-btn" id="gdn-add-root-btn" title="Add Root Folder">
                 <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
                   <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/>
@@ -178,6 +221,7 @@ function createSidebar() {
           </div>
         </div>
       </div>
+      <div id="gdn-sidebar-resize-handle"></div>
     </div>
   `;
 }
@@ -269,6 +313,16 @@ function createContextMenu() {
           <div class="gdn-context-menu-item" data-action="create-folder">
             <span>Folder</span>
           </div>
+          <div class="gdn-context-menu-separator"></div>
+          <div class="gdn-context-menu-item" data-action="template-meeting">
+            <span>Meeting Notes Template</span>
+          </div>
+          <div class="gdn-context-menu-item" data-action="template-project">
+            <span>Project Plan Template</span>
+          </div>
+          <div class="gdn-context-menu-item" data-action="template-report">
+            <span>Report Template</span>
+          </div>
         </div>
       </div>
       <div class="gdn-context-menu-item gdn-folder-only" data-action="create-folder-direct">
@@ -317,7 +371,8 @@ function cacheElements() {
     folderBtn: document.getElementById('gdn-folder-btn'),
     searchBtn: document.getElementById('gdn-search-btn'),
     createBtn: document.getElementById('gdn-create-btn'),
-    toggleBtn: document.getElementById('gdn-toggle-btn'),
+    settingsBtn: document.getElementById('gdn-settings-btn'),
+    closeBtn: document.getElementById('gdn-close-btn'),
     refreshBtn: document.getElementById('gdn-refresh-btn'),
     pinBtn: document.getElementById('gdn-pin-btn'),
     closeSidebarBtn: document.getElementById('gdn-close-sidebar-btn'),
@@ -346,15 +401,18 @@ function cacheElements() {
     modalClose: document.getElementById('gdn-modal-close'),
 
     // Context Menu
-    contextMenu: document.getElementById('gdn-context-menu')
+    contextMenu: document.getElementById('gdn-context-menu'),
+
+    // Resize Handle
+    resizeHandle: document.getElementById('gdn-sidebar-resize-handle')
   };
 }
 
 // ========== EVENT LISTENERS ==========
 
 function attachEventListeners() {
-  // Toggle extension ON/OFF
-  GDN.elements.toggleBtn?.addEventListener('click', handleToggle);
+  // Close extension button
+  GDN.elements.closeBtn?.addEventListener('click', closeExtension);
 
   // Folder button - expand sidebar
   GDN.elements.folderBtn?.addEventListener('click', handleFolderClick);
@@ -364,6 +422,9 @@ function attachEventListeners() {
 
   // Create button
   GDN.elements.createBtn?.addEventListener('click', handleCreateClick);
+
+  // Settings button
+  GDN.elements.settingsBtn?.addEventListener('click', showSettingsModal);
 
   // Sidebar controls
   GDN.elements.closeSidebarBtn?.addEventListener('click', () => collapseSidebar());
@@ -407,6 +468,12 @@ function attachEventListeners() {
 
   // Context menu items
   GDN.elements.contextMenu?.addEventListener('click', handleContextMenuClick);
+
+  // Right-click on tree container whitespace
+  GDN.elements.treeContainer?.addEventListener('contextmenu', handleTreeContainerContextMenu);
+
+  // Sidebar resize handle
+  GDN.elements.resizeHandle?.addEventListener('mousedown', startResize);
 }
 
 // ========== STATE MANAGEMENT ==========
@@ -423,6 +490,21 @@ async function setTabState(state) {
   });
 }
 
+async function saveCurrentUIState() {
+  try {
+    const state = {
+      sidebarExpanded: GDN.sidebarExpanded,
+      expandedFolders: Array.from(GDN.state.expandedFolders),
+      lastRootId: GDN.state.currentRootId,
+      recentFilesCollapsed: GDN.state.recentFilesCollapsed,
+      isPinned: GDN.isPinned
+    };
+    await sendMessageToBackground({ action: 'saveUIState', state });
+  } catch (error) {
+    console.error('[GDN] Failed to save UI state:', error);
+  }
+}
+
 // ========== ACTIVATION/DEACTIVATION ==========
 
 async function handleToggle() {
@@ -436,37 +518,139 @@ async function handleToggle() {
 
   // Save state
   await setTabState({ isActive: GDN.isActive });
-
-  // Update button
-  GDN.elements.toggleBtn.classList.toggle('active', GDN.isActive);
-  const tooltip = GDN.elements.toggleBtn.querySelector('.gdn-tooltip');
-  if (tooltip) {
-    tooltip.textContent = GDN.isActive ? 'Turn OFF' : 'Turn ON';
-  }
 }
 
 async function activateExtension() {
+  // Inject UI if not already done
+  if (!document.getElementById('gdn-root')) {
+    injectUI();
+    if (GDN.settings?.darkMode) {
+      applyDarkMode(true);
+    }
+  }
+
+  // Show the extension
+  if (GDN.elements.root) {
+    GDN.elements.root.style.display = '';
+  }
+
   GDN.isActive = true;
   GDN.elements.root?.classList.add('gdn-active');
   GDN.elements.iconbar?.classList.remove('gdn-hidden');
 
+  // Push content by iconbar width
+  document.body.classList.add('gdn-iconbar-active');
+
   // Check authentication
   await checkAuthentication();
+
+  // Restore sidebar state if it was expanded
+  if (GDN.sidebarExpanded) {
+    expandSidebar();
+  }
+
+  // Restore pin button state
+  if (GDN.isPinned) {
+    GDN.elements.pinBtn?.classList.add('active');
+  }
 
   showToast('Drive Navigator activated', 'success');
 }
 
+async function activateExtensionWithState() {
+  // Inject UI if not already done
+  if (!document.getElementById('gdn-root')) {
+    injectUI();
+    if (GDN.settings?.darkMode) {
+      applyDarkMode(true);
+    }
+  }
+
+  // Show the extension
+  if (GDN.elements.root) {
+    GDN.elements.root.style.display = '';
+  }
+
+  GDN.isActive = true;
+  GDN.elements.root?.classList.add('gdn-active');
+  GDN.elements.iconbar?.classList.remove('gdn-hidden');
+
+  // Push content by iconbar width
+  document.body.classList.add('gdn-iconbar-active');
+
+  // Restore pin button state
+  if (GDN.isPinned) {
+    GDN.elements.pinBtn?.classList.add('active');
+  }
+
+  // Check authentication
+  await checkAuthentication();
+
+  // Restore sidebar expanded state
+  if (GDN.sidebarExpanded) {
+    GDN.elements.sidebar?.classList.add('gdn-expanded');
+    GDN.elements.folderBtn?.classList.add('active');
+
+    // Apply pinned margin if pinned
+    if (GDN.isPinned) {
+      document.body.classList.add('gdn-sidebar-pinned');
+    }
+
+    // Load data
+    if (GDN.isAuthenticated) {
+      await loadInitialData();
+    }
+  }
+
+  // Apply saved sidebar width
+  const uiState = await sendMessageToBackground({ action: 'getUIState' });
+  if (uiState.success && uiState.data?.sidebarWidth) {
+    GDN.elements.sidebar.style.width = uiState.data.sidebarWidth + 'px';
+    document.documentElement.style.setProperty('--gdn-sidebar-width', uiState.data.sidebarWidth + 'px');
+  }
+}
+
 function deactivateExtension() {
+  // Completely hide the entire extension
+  if (GDN.elements.root) {
+    GDN.elements.root.style.display = 'none';
+  }
+
   GDN.isActive = false;
-  GDN.elements.root?.classList.remove('gdn-active');
-  GDN.elements.iconbar?.classList.add('gdn-hidden');
+  document.body.classList.remove('gdn-iconbar-active');
+  document.body.classList.remove('gdn-sidebar-pinned');
+
+  // Reset body margin
+  document.body.style.marginLeft = '';
 
   // Close sidebar and overlays
-  collapseSidebar();
-  closeSearchOverlay();
-  closeModal();
+  GDN.sidebarExpanded = false;
+  GDN.searchOpen = false;
 
   showToast('Drive Navigator deactivated', 'success');
+}
+
+function closeExtension() {
+  // Completely hide the entire extension
+  if (GDN.elements.root) {
+    GDN.elements.root.style.display = 'none';
+  }
+
+  // Remove body classes
+  document.body.classList.remove('gdn-iconbar-active');
+  document.body.classList.remove('gdn-sidebar-pinned');
+
+  // Reset body margin
+  document.body.style.marginLeft = '';
+
+  // Update state
+  GDN.isActive = false;
+  GDN.sidebarExpanded = false;
+  GDN.searchOpen = false;
+
+  // Save state
+  setTabState({ isActive: false });
+  saveCurrentUIState();
 }
 
 // ========== AUTHENTICATION ==========
@@ -474,7 +658,10 @@ function deactivateExtension() {
 async function checkAuthentication() {
   try {
     const response = await sendMessageToBackground({ action: 'checkAuth' });
-    GDN.isAuthenticated = response.authenticated;
+    // Response is { success: true, data: { authenticated: true/false } }
+    GDN.isAuthenticated = response.success && response.data?.authenticated;
+
+    console.log('[GDN] Auth check result:', GDN.isAuthenticated);
 
     if (GDN.isAuthenticated) {
       showMainContent();
@@ -535,20 +722,28 @@ function handleFolderClick() {
 function expandSidebar() {
   GDN.sidebarExpanded = true;
   GDN.elements.sidebar?.classList.add('gdn-expanded');
-  document.body.classList.add('gdn-sidebar-expanded');
   GDN.elements.folderBtn?.classList.add('active');
+
+  // If pinned, push content
+  if (GDN.isPinned) {
+    document.body.classList.add('gdn-sidebar-pinned');
+  }
 
   // Load data if authenticated
   if (GDN.isAuthenticated && GDN.state.folderCache.size === 0) {
     loadInitialData();
   }
+
+  saveCurrentUIState();
 }
 
 function collapseSidebar() {
   GDN.sidebarExpanded = false;
   GDN.elements.sidebar?.classList.remove('gdn-expanded');
-  document.body.classList.remove('gdn-sidebar-expanded');
   GDN.elements.folderBtn?.classList.remove('active');
+  document.body.classList.remove('gdn-sidebar-pinned');
+
+  saveCurrentUIState();
 }
 
 async function handleRefresh() {
@@ -558,9 +753,86 @@ async function handleRefresh() {
   showToast('Refreshed', 'success');
 }
 
-function handlePin() {
-  // Toggle pin state
-  showToast('Pin feature coming soon', 'info');
+async function handlePin() {
+  GDN.isPinned = !GDN.isPinned;
+
+  // Update pin button appearance
+  GDN.elements.pinBtn?.classList.toggle('active', GDN.isPinned);
+
+  // Update body class for content pushing
+  if (GDN.isPinned && GDN.sidebarExpanded) {
+    document.body.classList.add('gdn-sidebar-pinned');
+  } else {
+    document.body.classList.remove('gdn-sidebar-pinned');
+  }
+
+  // Save state
+  await sendMessageToBackground({
+    action: 'saveUIState',
+    state: { isPinned: GDN.isPinned }
+  });
+
+  showToast(GDN.isPinned ? 'Sidebar pinned' : 'Sidebar unpinned', 'success');
+}
+
+// ========== SIDEBAR RESIZE ==========
+
+function startResize(e) {
+  e.preventDefault();
+  GDN.isResizing = true;
+  GDN.elements.resizeHandle?.classList.add('dragging');
+
+  document.addEventListener('mousemove', doResize);
+  document.addEventListener('mouseup', stopResize);
+
+  // Prevent text selection while dragging
+  document.body.style.userSelect = 'none';
+}
+
+function doResize(e) {
+  if (!GDN.isResizing) return;
+
+  // Calculate new width (mouse X position minus icon bar width)
+  const iconBarWidth = 60;
+  let newWidth = e.clientX - iconBarWidth;
+
+  // Constrain width between min and max
+  const minWidth = 200;
+  const maxWidth = 500;
+  newWidth = Math.max(minWidth, Math.min(maxWidth, newWidth));
+
+  // Apply width
+  GDN.elements.sidebar.style.width = newWidth + 'px';
+
+  // Update CSS variable for body margin if pinned
+  document.documentElement.style.setProperty('--gdn-sidebar-width', newWidth + 'px');
+}
+
+function stopResize() {
+  if (!GDN.isResizing) return;
+
+  GDN.isResizing = false;
+  GDN.elements.resizeHandle?.classList.remove('dragging');
+
+  document.removeEventListener('mousemove', doResize);
+  document.removeEventListener('mouseup', stopResize);
+
+  document.body.style.userSelect = '';
+
+  // Save the width
+  const currentWidth = parseInt(GDN.elements.sidebar.style.width) || 280;
+  saveSidebarWidth(currentWidth);
+}
+
+async function saveSidebarWidth(width) {
+  try {
+    await sendMessageToBackground({
+      action: 'saveUIState',
+      state: { sidebarWidth: width }
+    });
+  } catch (error) {
+    console.error('[GDN] Failed to save sidebar width:', error);
+  }
 }
 
 // ========== DATA LOADING ==========
@@ -616,16 +888,40 @@ function renderTree() {
 
   GDN.elements.treeContainer.innerHTML = '';
 
-  // Render recent files section first (only for My Drive root)
-  if (GDN.state.currentRootId === 'root' && GDN.state.recentFiles && GDN.state.recentFiles.length > 0) {
+  // Render recent files section first
+  if (GDN.state.recentFiles && GDN.state.recentFiles.length > 0) {
     const recentSection = createRecentFilesSection();
     GDN.elements.treeContainer.appendChild(recentSection);
   }
 
-  // Render main folder tree
+  // Add section header for folder tree
+  const folderHeader = document.createElement('div');
+  folderHeader.className = 'gdn-section-header';
+  folderHeader.innerHTML = `
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+    </svg>
+    <span>Folders</span>
+  `;
+  GDN.elements.treeContainer.appendChild(folderHeader);
+
+  // Render main folder tree recursively
+  renderTreeLevel(files, 0, GDN.elements.treeContainer);
+}
+
+function renderTreeLevel(files, level, container) {
   files.forEach(file => {
-    const item = createTreeItem(file, 0);
-    GDN.elements.treeContainer.appendChild(item);
+    const item = createTreeItem(file, level);
+    container.appendChild(item);
+
+    // If this is an expanded folder, render its children
+    const isDir = file.mimeType === 'application/vnd.google-apps.folder';
+    if (isDir && GDN.state.expandedFolders.has(file.id)) {
+      const children = GDN.state.folderCache.get(file.id);
+      if (children && children.length > 0) {
+        renderTreeLevel(children, level + 1, container);
+      }
+    }
   });
 }
 
@@ -657,8 +953,8 @@ function createTreeItem(file, level) {
   // Icon
   html += `<img src="${file.iconLink || getDefaultIcon(file.mimeType)}" class="gdn-tree-icon" alt="" />`;
 
-  // Name
-  html += `<span class="gdn-tree-name">${escapeHtml(file.name)}</span>`;
+  // Name with tooltip data attribute
+  html += `<span class="gdn-tree-name" data-full-name="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>`;
 
   div.innerHTML = html;
 
@@ -687,11 +983,13 @@ function createTreeItem(file, level) {
 
 async function toggleFolder(folderId) {
   if (GDN.state.expandedFolders.has(folderId)) {
+    // Collapse
     GDN.state.expandedFolders.delete(folderId);
   } else {
+    // Expand
     GDN.state.expandedFolders.add(folderId);
 
-    // Load folder if not cached
+    // Load folder contents if not cached
     if (!GDN.state.folderCache.has(folderId)) {
       try {
         const response = await sendMessageToBackground({
@@ -704,10 +1002,15 @@ async function toggleFolder(folderId) {
         }
       } catch (error) {
         console.error('[GDN] Failed to load folder:', error);
+        showToast('Failed to load folder', 'error');
       }
     }
   }
 
+  // Save UI state
+  saveCurrentUIState();
+
+  // Re-render tree
   renderTree();
 }
 
@@ -743,7 +1046,7 @@ function createRootFolderItem(root) {
     <svg class="gdn-root-folder-icon" viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
       <path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
     </svg>
-    <span class="gdn-root-folder-name">${escapeHtml(root.name)}</span>
+    <span class="gdn-root-folder-name" data-full-name="${escapeHtml(root.name)}">${escapeHtml(root.name)}</span>
   `;
 
   // Click handler - switch to this root
@@ -771,6 +1074,9 @@ async function handleRootFolderClick(rootId) {
     GDN.state.expandedFolders.clear();
     GDN.state.expandedFolders.add(rootId);
 
+    // Save UI state
+    saveCurrentUIState();
+
     // Load new root folder contents
     const response = await sendMessageToBackground({
       action: 'listFiles',
@@ -793,20 +1099,74 @@ async function handleRootFolderClick(rootId) {
 }
 
 function handleRootFolderRightClick(root, event) {
-  // Create context menu
+  // Hide any existing context menu first
+  hideContextMenu();
+
+  // Create root folder context menu
   const menu = document.createElement('div');
+  menu.id = 'gdn-root-context-menu';
   menu.className = 'gdn-context-menu';
+
+  // Apply dark mode class if active
+  if (GDN.elements.root?.classList.contains('gdn-dark-mode')) {
+    menu.classList.add('gdn-dark-mode');
+  }
+
   menu.style.position = 'fixed';
   menu.style.left = `${event.clientX}px`;
   menu.style.top = `${event.clientY}px`;
 
-  const deleteOption = document.createElement('div');
-  deleteOption.className = 'gdn-context-menu-item';
-  deleteOption.textContent = 'Delete Root Folder';
-  deleteOption.addEventListener('click', () => handleDeleteRoot(root.id));
+  menu.innerHTML = `
+    <div class="gdn-context-menu-item" data-action="open-root">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+      </svg>
+      <span>Open in Drive</span>
+    </div>
+    <div class="gdn-context-menu-item" data-action="set-default">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>
+      </svg>
+      <span>Set as Default</span>
+    </div>
+    <div class="gdn-context-menu-separator"></div>
+    <div class="gdn-context-menu-item gdn-danger" data-action="remove-root">
+      <svg viewBox="0 0 24 24" fill="currentColor">
+        <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/>
+      </svg>
+      <span>Remove from Sidebar</span>
+    </div>
+  `;
 
-  menu.appendChild(deleteOption);
   document.body.appendChild(menu);
+
+  // Adjust position to not go off-screen (after adding to DOM so getBoundingClientRect works)
+  const menuRect = menu.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+
+  let x = event.clientX;
+  let y = event.clientY;
+
+  if (x + menuRect.width > viewportWidth) {
+    x = viewportWidth - menuRect.width - 10;
+  }
+
+  if (y + menuRect.height > viewportHeight) {
+    y = viewportHeight - menuRect.height - 10;
+  }
+
+  menu.style.left = `${x}px`;
+  menu.style.top = `${y}px`;
+
+  // Add click handlers
+  menu.querySelectorAll('.gdn-context-menu-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const action = item.dataset.action;
+      handleRootContextAction(action, root);
+      menu.remove();
+    });
+  });
 
   // Close menu on click outside
   const closeMenu = (e) => {
@@ -817,6 +1177,22 @@ function handleRootFolderRightClick(root, event) {
   };
 
   setTimeout(() => document.addEventListener('click', closeMenu), 0);
+}
+
+async function handleRootContextAction(action, root) {
+  switch (action) {
+    case 'open-root':
+      window.open(`https://drive.google.com/drive/folders/${root.id}`, '_blank');
+      break;
+    case 'set-default':
+      // Save as default root
+      await sendMessageToBackground({ action: 'saveSettings', settings: { defaultRootId: root.id } });
+      showToast(`Set "${root.name}" as default folder`, 'success');
+      break;
+    case 'remove-root':
+      handleDeleteRoot(root.id);
+      break;
+  }
 }
 
 async function handleDeleteRoot(rootId) {
@@ -862,8 +1238,13 @@ function showAddRootModal() {
   GDN.elements.modalBody.innerHTML = `
     <div class="gdn-modal-section">
       <label class="gdn-label">Google Drive Folder URL or ID</label>
-      <input type="text" id="gdn-root-url-input" class="gdn-input" placeholder="https://drive.google.com/drive/folders/... or folder ID" />
-      <div class="gdn-help-text">Paste a Google Drive folder URL or folder ID</div>
+      <input type="text" id="gdn-root-url-input" class="gdn-input"
+             placeholder="https://drive.google.com/drive/folders/... or folder ID"
+             autocomplete="off"
+             autocapitalize="off"
+             autocorrect="off"
+             spellcheck="false" />
+      <div class="gdn-help-text">Paste a folder URL or ID from My Drive or Shared Drives</div>
       <div class="gdn-error-message gdn-hidden" id="gdn-add-root-error"></div>
     </div>
   `;
@@ -953,10 +1334,13 @@ async function handleConfirmAddRoot() {
 }
 
 function extractFolderId(input) {
-  // Try to match full URL patterns
+  // Try to match various Google Drive URL patterns (including Shared Drives)
   const urlPatterns = [
-    /\/folders\/([a-zA-Z0-9_-]+)/,
-    /id=([a-zA-Z0-9_-]+)/
+    /\/folders\/([a-zA-Z0-9_-]+)/,           // /folders/ID (My Drive & Shared Drives)
+    /\/drive\/folders\/([a-zA-Z0-9_-]+)/,    // /drive/folders/ID
+    /\/drive\/u\/\d+\/folders\/([a-zA-Z0-9_-]+)/, // /drive/u/0/folders/ID
+    /id=([a-zA-Z0-9_-]+)/,                   // ?id=ID
+    /\/folderview\?id=([a-zA-Z0-9_-]+)/      // /folderview?id=ID
   ];
 
   for (const pattern of urlPatterns) {
@@ -966,9 +1350,10 @@ function extractFolderId(input) {
     }
   }
 
-  // If no URL pattern matches, assume it's already a folder ID
-  if (/^[a-zA-Z0-9_-]+$/.test(input)) {
-    return input;
+  // If no URL pattern matches, check if it's a valid folder ID format
+  // Google Drive IDs (including Shared Drive IDs) are typically 10-50 characters
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(input.trim())) {
+    return input.trim();
   }
 
   return null;
@@ -1031,21 +1416,48 @@ function renderSearchSuggestions(results) {
     return;
   }
 
-  GDN.elements.searchSuggestions.innerHTML = results.map(file => `
-    <div class="gdn-search-suggestion" data-url="${file.webViewLink}">
-      <img src="${file.iconLink || getDefaultIcon(file.mimeType)}" class="gdn-search-icon" alt="" />
-      <div class="gdn-search-info">
-        <div class="gdn-search-name">${escapeHtml(file.name)}</div>
-        <div class="gdn-search-path">Google Drive</div>
-      </div>
-    </div>
-  `).join('');
+  GDN.elements.searchSuggestions.innerHTML = '';
 
-  // Add click handlers
-  GDN.elements.searchSuggestions.querySelectorAll('.gdn-search-suggestion').forEach(el => {
-    el.addEventListener('click', () => {
-      window.location.href = el.dataset.url;
+  results.forEach(file => {
+    const div = document.createElement('div');
+    div.className = 'gdn-search-suggestion';
+    div.dataset.url = file.webViewLink;
+
+    const icon = document.createElement('img');
+    icon.src = file.iconLink || getDefaultIcon(file.mimeType);
+    icon.className = 'gdn-search-icon';
+    icon.alt = '';
+
+    const info = document.createElement('div');
+    info.className = 'gdn-search-info';
+
+    const name = document.createElement('div');
+    name.className = 'gdn-search-name';
+    name.textContent = file.name;
+
+    const path = document.createElement('div');
+    path.className = 'gdn-search-path';
+    path.textContent = 'Google Drive';
+
+    info.appendChild(name);
+    info.appendChild(path);
+    div.appendChild(icon);
+    div.appendChild(info);
+
+    // Click handler
+    div.addEventListener('click', () => {
+      window.location.href = file.webViewLink;
     });
+
+    // Context menu handler
+    div.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+      showContextMenu(e, file, isFolder);
+    });
+
+    GDN.elements.searchSuggestions.appendChild(div);
   });
 }
 
@@ -1100,9 +1512,16 @@ async function sendMessageToBackground(message) {
 function handleMessage(request, sender, sendResponse) {
   switch (request.action) {
     case 'toggleExtension':
-      handleToggle();
-      sendResponse({ success: true });
-      break;
+      (async () => {
+        if (GDN.isActive) {
+          deactivateExtension();
+        } else {
+          await activateExtension();
+        }
+        await setTabState({ isActive: GDN.isActive });
+        sendResponse({ success: true });
+      })();
+      return true; // Async response
 
     case 'refreshData':
       handleRefresh();
@@ -1121,11 +1540,6 @@ function handleMessage(request, sender, sendResponse) {
           if (!GDN.isActive) {
             await activateExtension();
             await setTabState({ isActive: true });
-            GDN.elements.toggleBtn.classList.add('active');
-            const tooltip = GDN.elements.toggleBtn.querySelector('.gdn-tooltip');
-            if (tooltip) {
-              tooltip.textContent = 'Turn OFF';
-            }
           }
 
           // Open sidebar
@@ -1207,23 +1621,39 @@ function getRelativeTime(dateString) {
 function createRecentFilesSection() {
   const section = document.createElement('div');
   section.className = 'gdn-recent-section';
+  section.id = 'gdn-recent-section';
 
-  // Header
+  // Header with toggle
   const header = document.createElement('div');
-  header.className = 'gdn-recent-header';
+  header.className = 'gdn-recent-header gdn-collapsible-header';
   header.innerHTML = `
+    <span class="gdn-collapse-toggle ${GDN.state.recentFilesCollapsed ? '' : 'expanded'}"></span>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/>
     </svg>
     <span>Recent Files</span>
   `;
+
+  // Click to toggle
+  header.addEventListener('click', toggleRecentFiles);
   section.appendChild(header);
 
-  // Recent files list
+  // Recent files list (collapsible)
   const list = document.createElement('div');
   list.className = 'gdn-recent-list';
+  list.id = 'gdn-recent-list';
 
-  GDN.state.recentFiles.slice(0, 10).forEach(file => {
+  // Hide if collapsed
+  if (GDN.state.recentFilesCollapsed) {
+    list.style.display = 'none';
+  }
+
+  // SORT by modifiedTime descending (most recent first)
+  const sortedFiles = [...GDN.state.recentFiles].sort((a, b) => {
+    return new Date(b.modifiedTime) - new Date(a.modifiedTime);
+  });
+
+  sortedFiles.slice(0, 10).forEach(file => {
     const item = createRecentFileItem(file);
     list.appendChild(item);
   });
@@ -1236,6 +1666,23 @@ function createRecentFilesSection() {
   section.appendChild(divider);
 
   return section;
+}
+
+function toggleRecentFiles() {
+  GDN.state.recentFilesCollapsed = !GDN.state.recentFilesCollapsed;
+
+  const list = document.getElementById('gdn-recent-list');
+  const toggle = document.querySelector('.gdn-recent-header .gdn-collapse-toggle');
+
+  if (GDN.state.recentFilesCollapsed) {
+    list.style.display = 'none';
+    toggle?.classList.remove('expanded');
+  } else {
+    list.style.display = 'block';
+    toggle?.classList.add('expanded');
+  }
+
+  saveCurrentUIState();
 }
 
 function createRecentFileItem(file) {
@@ -1254,6 +1701,7 @@ function createRecentFileItem(file) {
   const name = document.createElement('div');
   name.className = 'gdn-recent-name';
   name.textContent = file.name;
+  name.setAttribute('data-full-name', file.name);
 
   const time = document.createElement('div');
   time.className = 'gdn-recent-time';
@@ -1274,10 +1722,38 @@ function createRecentFileItem(file) {
     }
   });
 
+  // Context menu handler
+  div.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const isFolder = file.mimeType === 'application/vnd.google-apps.folder';
+    showContextMenu(e, file, isFolder);
+  });
+
   return div;
 }
 
 // ========== CONTEXT MENU ==========
+
+function handleTreeContainerContextMenu(e) {
+  // Only trigger if clicking on the container itself, not on a tree item
+  if (e.target === GDN.elements.treeContainer ||
+      e.target.closest('.gdn-tree-item') === null &&
+      e.target.closest('.gdn-recent-section') === null) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Set context target to current root folder for creating items there
+    GDN.state.contextMenuTarget = {
+      id: GDN.state.currentRootId,
+      name: 'Current Folder',
+      mimeType: 'application/vnd.google-apps.folder'
+    };
+
+    // Show context menu with folder options
+    showContextMenu(e, GDN.state.contextMenuTarget, true);
+  }
+}
 
 function showContextMenu(event, file, isFolder) {
   const menu = GDN.elements.contextMenu;
@@ -1391,6 +1867,22 @@ function handleContextMenuClick(e) {
 
     case 'delete':
       showDeleteConfirmation(file);
+      break;
+
+    case 'template-meeting':
+      // Open Google Docs template
+      window.open('https://docs.google.com/document/create?usp=docs_alf&template=meeting_notes', '_blank');
+      hideContextMenu();
+      break;
+
+    case 'template-project':
+      window.open('https://docs.google.com/spreadsheets/create?usp=sheets_alf&template=project_plan', '_blank');
+      hideContextMenu();
+      break;
+
+    case 'template-report':
+      window.open('https://docs.google.com/document/create?usp=docs_alf&template=report', '_blank');
+      hideContextMenu();
       break;
   }
 }
@@ -1753,6 +2245,63 @@ function showModal(title, bodyHTML, buttons = []) {
   });
 
   GDN.elements.modalOverlay.classList.add('gdn-visible');
+}
+
+// ========== SETTINGS ==========
+
+function showSettingsModal() {
+  // Load current settings first
+  sendMessageToBackground({ action: 'getSettings' }).then(response => {
+    const settings = response.data || { startupMode: 'manual', darkMode: false };
+
+    showModal('Settings', `
+      <div class="gdn-settings-section">
+        <div class="gdn-setting-item">
+          <label class="gdn-setting-label">
+            <span>Startup Mode</span>
+            <select id="gdn-startup-mode" class="gdn-select">
+              <option value="manual" ${settings.startupMode === 'manual' ? 'selected' : ''}>Manual - Click to open</option>
+              <option value="auto" ${settings.startupMode === 'auto' ? 'selected' : ''}>Auto on Google Domains</option>
+            </select>
+          </label>
+          <div class="gdn-setting-help">Auto mode loads minimized on Google Drive, Docs, Sheets, Slides</div>
+        </div>
+        <div class="gdn-setting-item">
+          <label class="gdn-setting-label">
+            <span>Dark Mode</span>
+            <input type="checkbox" id="gdn-dark-mode" class="gdn-toggle" ${settings.darkMode ? 'checked' : ''} />
+          </label>
+        </div>
+      </div>
+    `, [
+      { text: 'Cancel', onClick: closeModal },
+      { text: 'Save', primary: true, onClick: saveSettingsFromModal }
+    ]);
+  });
+}
+
+async function saveSettingsFromModal() {
+  const startupMode = document.getElementById('gdn-startup-mode').value;
+  const darkMode = document.getElementById('gdn-dark-mode').checked;
+
+  await sendMessageToBackground({
+    action: 'saveSettings',
+    settings: { startupMode, darkMode }
+  });
+
+  // Apply dark mode immediately
+  applyDarkMode(darkMode);
+
+  closeModal();
+  showToast('Settings saved', 'success');
+}
+
+function applyDarkMode(enabled) {
+  if (enabled) {
+    GDN.elements.root?.classList.add('gdn-dark-mode');
+  } else {
+    GDN.elements.root?.classList.remove('gdn-dark-mode');
+  }
 }
 
 // ========== TREE REFRESH ==========

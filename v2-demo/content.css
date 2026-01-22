@@ -133,11 +133,16 @@
   flex: 1;
 }
 
-/* Toggle button at bottom */
-.gdn-toggle-button {
+/* Close button at bottom */
+.gdn-close-btn {
   margin-top: auto;
-  border-top: 1px solid var(--gdn-border-color);
-  padding-top: 12px;
+  color: var(--gdn-text-secondary);
+  font-size: 18px;
+}
+
+.gdn-close-btn:hover {
+  color: var(--gdn-danger-color);
+  background-color: #fce8e6;
 }
 
 /* ========== EXPANDED SIDEBAR ========== */
@@ -164,7 +169,13 @@
   transform: translateX(0);
 }
 
-/* When sidebar is expanded, push page content */
+/* When icon bar is visible, push page content by icon bar width */
+body.gdn-iconbar-active {
+  margin-left: var(--gdn-iconbar-width) !important;
+  transition: margin-left var(--gdn-transition-speed) ease !important;
+}
+
+/* When sidebar is expanded, push page content by full width */
 body.gdn-sidebar-expanded {
   margin-left: calc(var(--gdn-iconbar-width) + var(--gdn-sidebar-width)) !important;
   transition: margin-left var(--gdn-transition-speed) ease !important;
