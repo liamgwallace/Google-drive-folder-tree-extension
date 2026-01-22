@@ -199,14 +199,30 @@
   background-color: var(--gdn-primary-color);
 }
 
-/* When icon bar is active (not pinned), push content by icon bar width */
-body.gdn-iconbar-active {
+/* When icon bar is active (not pinned), resize content to accommodate icon bar width */
+html.gdn-iconbar-active {
   margin-left: var(--gdn-iconbar-width) !important;
+  width: calc(100% - var(--gdn-iconbar-width)) !important;
+  max-width: calc(100vw - var(--gdn-iconbar-width)) !important;
+  overflow-x: auto !important;
 }
 
-/* When sidebar is pinned AND expanded, push content by full width */
-body.gdn-sidebar-pinned {
+body.gdn-iconbar-active {
+  width: 100% !important;
+  margin-left: 0 !important;
+}
+
+/* When sidebar is pinned AND expanded, resize content to accommodate full width */
+html.gdn-sidebar-pinned {
   margin-left: calc(var(--gdn-iconbar-width) + var(--gdn-sidebar-width)) !important;
+  width: calc(100% - var(--gdn-iconbar-width) - var(--gdn-sidebar-width)) !important;
+  max-width: calc(100vw - var(--gdn-iconbar-width) - var(--gdn-sidebar-width)) !important;
+  overflow-x: auto !important;
+}
+
+body.gdn-sidebar-pinned {
+  width: 100% !important;
+  margin-left: 0 !important;
 }
 
 /* Pin button active state */

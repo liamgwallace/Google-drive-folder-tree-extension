@@ -5,60 +5,66 @@
 
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 
-// Per-tab state storage
-const tabStates = new Map();
-const tabParentRelationships = new Map(); // childTabId -> parentTabId
+// In-memory cache for parent relationships (doesn't need to persist)
+const tabParentRelationships = new Map();
 
 // Folder cache
 const folderCache = new Map();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-// ========== TAB STATE MANAGEMENT ==========
+// ========== TAB STATE MANAGEMENT (using chrome.storage.session for persistence) ==========
 
 /**
  * Get state for a specific tab
  */
-function getTabState(tabId) {
-  if (!tabStates.has(tabId)) {
-    // Check if this tab has a parent (child tab inheritance)
-    const parentId = tabParentRelationships.get(tabId);
-    if (parentId && tabStates.has(parentId)) {
-      // Inherit parent's state
-      const parentState = tabStates.get(parentId);
+async function getTabState(tabId) {
+  const key = `tabState_${tabId}`;
+  const result = await chrome.storage.session.get(key);
+
+  if (result[key]) {
+    return result[key];
+  }
+
+  // Check if this tab has a parent (child tab inheritance)
+  const parentId = tabParentRelationships.get(tabId);
+  if (parentId) {
+    const parentKey = `tabState_${parentId}`;
+    const parentResult = await chrome.storage.session.get(parentKey);
+    if (parentResult[parentKey]) {
+      // Inherit parent's isActive state
       const inheritedState = {
-        isActive: parentState.isActive,
+        isActive: parentResult[parentKey].isActive,
         sidebarExpanded: false,
         parentTabId: parentId
       };
-      tabStates.set(tabId, inheritedState);
+      await chrome.storage.session.set({ [key]: inheritedState });
       return inheritedState;
     }
-
-    // Default state: OFF
-    const defaultState = {
-      isActive: false,
-      sidebarExpanded: false
-    };
-    tabStates.set(tabId, defaultState);
-    return defaultState;
   }
 
-  return tabStates.get(tabId);
+  // Default state: OFF
+  const defaultState = {
+    isActive: false,
+    sidebarExpanded: false
+  };
+  return defaultState;
 }
 
 /**
  * Set state for a specific tab
  */
-function setTabState(tabId, state) {
-  const currentState = getTabState(tabId);
-  tabStates.set(tabId, { ...currentState, ...state });
+async function setTabState(tabId, state) {
+  const key = `tabState_${tabId}`;
+  const currentState = await getTabState(tabId);
+  await chrome.storage.session.set({ [key]: { ...currentState, ...state } });
 }
 
 /**
  * Clean up state when tab is closed
  */
 chrome.tabs.onRemoved.addListener((tabId) => {
-  tabStates.delete(tabId);
+  const key = `tabState_${tabId}`;
+  chrome.storage.session.remove(key);
   tabParentRelationships.delete(tabId);
 });
 
@@ -573,12 +579,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       switch (request.action) {
         // Tab state management
         case 'getTabState':
-          response = getTabState(sender.tab?.id);
+          response = await getTabState(sender.tab?.id);
           break;
 
         case 'setTabState':
           if (sender.tab?.id) {
-            setTabState(sender.tab.id, request.state);
+            await setTabState(sender.tab.id, request.state);
             response = { success: true };
           } else {
             throw new Error('No tab ID available');

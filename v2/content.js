@@ -39,9 +39,11 @@ async function init() {
     if (uiState.success && uiState.data) {
       GDN.state.expandedFolders = new Set(uiState.data.expandedFolders || []);
       GDN.state.currentRootId = uiState.data.lastRootId || 'root';
-      GDN.sidebarExpanded = uiState.data.sidebarExpanded || false;
       GDN.state.recentFilesCollapsed = uiState.data.recentFilesCollapsed !== false;
       GDN.isPinned = uiState.data.isPinned || false;
+
+      // Only restore expanded state if pinned; unpinned always starts collapsed
+      GDN.sidebarExpanded = GDN.isPinned ? (uiState.data.sidebarExpanded || false) : false;
 
       // Load saved sidebar width
       if (uiState.data.sidebarWidth) {
@@ -54,9 +56,9 @@ async function init() {
     const settings = settingsResponse.success ? settingsResponse.data : { startupMode: 'manual', darkMode: false };
     GDN.settings = settings;
 
-    // Check if extension was active (from tab state OR UI state showing it was in use)
+    // Check if extension was active (from tab state OR pinned state)
     const tabState = await getTabState();
-    const wasActive = tabState?.isActive || GDN.sidebarExpanded || GDN.isPinned;
+    const wasActive = tabState?.isActive || GDN.isPinned;
 
     // Check auto-activate for Google domains
     if (!wasActive && settings.startupMode === 'auto') {
@@ -459,10 +461,23 @@ function attachEventListeners() {
 
   GDN.elements.modalClose?.addEventListener('click', closeModal);
 
-  // Context menu - close on outside click
+  // Close context menu and collapse sidebar on outside click
   document.addEventListener('click', (e) => {
     if (GDN.elements.contextMenu && !GDN.elements.contextMenu.contains(e.target)) {
       hideContextMenu();
+    }
+
+    // Collapse sidebar when clicking outside (if not pinned)
+    if (GDN.sidebarExpanded && !GDN.isPinned) {
+      const clickedInSidebar = GDN.elements.sidebar?.contains(e.target);
+      const clickedInIconbar = GDN.elements.iconbar?.contains(e.target);
+      const clickedInSearchOverlay = GDN.elements.searchOverlay?.contains(e.target);
+      const clickedInModal = GDN.elements.modalOverlay?.contains(e.target);
+      const clickedInContextMenu = GDN.elements.contextMenu?.contains(e.target);
+
+      if (!clickedInSidebar && !clickedInIconbar && !clickedInSearchOverlay && !clickedInModal && !clickedInContextMenu) {
+        collapseSidebar();
+      }
     }
   });
 
@@ -538,8 +553,12 @@ async function activateExtension() {
   GDN.elements.root?.classList.add('gdn-active');
   GDN.elements.iconbar?.classList.remove('gdn-hidden');
 
-  // Push content by iconbar width
+  // Resize content to accommodate iconbar width
+  document.documentElement.classList.add('gdn-iconbar-active');
   document.body.classList.add('gdn-iconbar-active');
+
+  // Save tab state so it persists across navigation
+  await setTabState({ isActive: true });
 
   // Check authentication
   await checkAuthentication();
@@ -575,8 +594,12 @@ async function activateExtensionWithState() {
   GDN.elements.root?.classList.add('gdn-active');
   GDN.elements.iconbar?.classList.remove('gdn-hidden');
 
-  // Push content by iconbar width
+  // Resize content to accommodate iconbar width
+  document.documentElement.classList.add('gdn-iconbar-active');
   document.body.classList.add('gdn-iconbar-active');
+
+  // Save tab state so it persists across navigation
+  await setTabState({ isActive: true });
 
   // Restore pin button state
   if (GDN.isPinned) {
@@ -591,8 +614,9 @@ async function activateExtensionWithState() {
     GDN.elements.sidebar?.classList.add('gdn-expanded');
     GDN.elements.folderBtn?.classList.add('active');
 
-    // Apply pinned margin if pinned
+    // Apply pinned resize if pinned
     if (GDN.isPinned) {
+      document.documentElement.classList.add('gdn-sidebar-pinned');
       document.body.classList.add('gdn-sidebar-pinned');
     }
 
@@ -617,6 +641,8 @@ function deactivateExtension() {
   }
 
   GDN.isActive = false;
+  document.documentElement.classList.remove('gdn-iconbar-active');
+  document.documentElement.classList.remove('gdn-sidebar-pinned');
   document.body.classList.remove('gdn-iconbar-active');
   document.body.classList.remove('gdn-sidebar-pinned');
 
@@ -636,7 +662,9 @@ function closeExtension() {
     GDN.elements.root.style.display = 'none';
   }
 
-  // Remove body classes
+  // Remove layout classes from html and body
+  document.documentElement.classList.remove('gdn-iconbar-active');
+  document.documentElement.classList.remove('gdn-sidebar-pinned');
   document.body.classList.remove('gdn-iconbar-active');
   document.body.classList.remove('gdn-sidebar-pinned');
 
@@ -724,8 +752,9 @@ function expandSidebar() {
   GDN.elements.sidebar?.classList.add('gdn-expanded');
   GDN.elements.folderBtn?.classList.add('active');
 
-  // If pinned, push content
+  // If pinned, resize content to accommodate sidebar
   if (GDN.isPinned) {
+    document.documentElement.classList.add('gdn-sidebar-pinned');
     document.body.classList.add('gdn-sidebar-pinned');
   }
 
@@ -741,6 +770,7 @@ function collapseSidebar() {
   GDN.sidebarExpanded = false;
   GDN.elements.sidebar?.classList.remove('gdn-expanded');
   GDN.elements.folderBtn?.classList.remove('active');
+  document.documentElement.classList.remove('gdn-sidebar-pinned');
   document.body.classList.remove('gdn-sidebar-pinned');
 
   saveCurrentUIState();
@@ -759,10 +789,12 @@ async function handlePin() {
   // Update pin button appearance
   GDN.elements.pinBtn?.classList.toggle('active', GDN.isPinned);
 
-  // Update body class for content pushing
+  // Update html/body classes for content resizing
   if (GDN.isPinned && GDN.sidebarExpanded) {
+    document.documentElement.classList.add('gdn-sidebar-pinned');
     document.body.classList.add('gdn-sidebar-pinned');
   } else {
+    document.documentElement.classList.remove('gdn-sidebar-pinned');
     document.body.classList.remove('gdn-sidebar-pinned');
   }
 
@@ -966,6 +998,10 @@ function createTreeItem(file, level) {
       if (e.ctrlKey || e.metaKey) {
         window.open(file.webViewLink, '_blank');
       } else {
+        // Collapse sidebar before navigating (if not pinned)
+        if (!GDN.isPinned) {
+          collapseSidebar();
+        }
         window.location.href = file.webViewLink;
       }
     });
@@ -1718,6 +1754,10 @@ function createRecentFileItem(file) {
     if (e.ctrlKey || e.metaKey) {
       window.open(file.webViewLink, '_blank');
     } else {
+      // Collapse sidebar before navigating (if not pinned)
+      if (!GDN.isPinned) {
+        collapseSidebar();
+      }
       window.location.href = file.webViewLink;
     }
   });
@@ -1821,6 +1861,10 @@ function handleContextMenuClick(e) {
   // Handle actions
   switch (action) {
     case 'open-main':
+      // Collapse sidebar before navigating (if not pinned)
+      if (!GDN.isPinned) {
+        collapseSidebar();
+      }
       window.location.href = file.webViewLink;
       break;
 
